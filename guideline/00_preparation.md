@@ -467,3 +467,341 @@ Nguồn tham khảo: [AgentSeek 快速开始](https://github.com/ob-labs/agentse
 ### Tài nguyên liên quan
 
 AgentSeek CLI tạo ứng dụng từ template — [Video讲解 Bilibili](https://www.bilibili.com/video/BV1cYEt6FEAq/)
+
+---
+
+### AgentSeek – Phần chuẩn bị (phần 2): Cài dev skills cho AI coding assistant
+
+> Sau khi hoàn thành chương này, Codex, Claude Code hoặc các công cụ tương thích khác có thể dùng `langchain-dev-guide` và `langsmith-trace` trong dự án hiện tại.
+>
+> Các lệnh trong bài được xác minh ngày 15/07/2026. Skills CLI sẽ tiếp tục cập nhật; hãy lấy output của `npx skills --help` làm chuẩn.
+> Học viên Windows hãy tiếp tục dùng môi trường đã chọn ở chương trước: người dùng WSL2 thực hiện các lệnh macOS / Linux / WSL2 (Bash) trong bài; học viên ở lại Windows nguyên sinh thực hiện các lệnh PowerShell tương ứng. Đừng trộn lẫn hai bộ môi trường Python, Node.js hay Git trong cùng một dự án.
+
+#### Sự khác biệt giữa hai loại Skill
+
+Chương này cài dev skills cho coding assistant. Chúng giúp Codex, Claude Code, Cursor… chỉnh sửa và debug dự án.
+
+Chương 7 của khóa học giới thiệu DeepAgents runtime Skill. Runtime Skill được cung cấp cho Agent của bạn qua `create_deep_agent(skills=[...])`. Cả hai đều dùng `SKILL.md`, nhưng phục vụ đối tượng khác nhau:
+
+| Loại                          | Người dùng                    | Cách cài hoặc load                       | Chương này có liên quan không |
+| ----------------------------- | ----------------------------- | ---------------------------------------- | ------------------------------ |
+| Dev skills cho coding assistant | Codex, Claude Code, Cursor… | `npx skills add ...`                     | Có                             |
+| DeepAgents runtime Skill      | Deep Agent bạn tự xây         | `create_deep_agent(skills=[...])`        | Không, xem chương 7           |
+
+#### 1. Xem dev skills của AgentSeek
+
+Skills CLI chạy qua npm. Trước tiên xác nhận Node.js và npm đã được cài:
+
+```
+node --version
+npm --version
+```
+
+Vào dự án được sinh ở chương trước:
+
+```
+cd research_deepagent
+```
+
+Xem các skill mà AgentSeek repository cung cấp:
+
+```
+npx skills add ob-labs/agentseek --list
+```
+
+Các skill trong repository sẽ tiếp tục tăng; danh sách thực tế lấy output của lệnh làm chuẩn. Khóa học tập trung dùng hai skill sau:
+
+| Skill                 | Mục đích                                     |
+| --------------------- | -------------------------------------------- |
+| `langchain-dev-guide` | Hướng dẫn phát triển LangChain, LangGraph và DeepAgents |
+| `langsmith-trace`     | Quy trình truy vấn và debug LangSmith Trace  |
+
+Các skill khác xuất hiện trong output không liên quan đến quy trình chuẩn bị của khóa học, có thể tạm bỏ qua.
+
+#### 2. Cài vào dự án hiện tại
+
+Chạy lệnh sau:
+
+```
+npx skills add ob-labs/agentseek --skill langchain-dev-guide --skill langsmith-trace
+```
+
+Skills CLI sẽ phát hiện các coding assistant có sẵn trên máy. Theo hướng dẫn, chọn Codex, Claude Code hoặc công cụ bạn đang dùng rồi xác nhận cài đặt.
+
+Bạn cũng có thể chỉ định công cụ trực tiếp. Cài vào Codex:
+
+```
+npx skills add ob-labs/agentseek --skill langchain-dev-guide --skill langsmith-trace --agent codex --yes
+```
+
+Cài vào Claude Code:
+
+```
+npx skills add ob-labs/agentseek --skill langchain-dev-guide --skill langsmith-trace --agent claude-code --yes
+```
+
+Chương này dùng cài đặt cấp dự án (project-level), không thêm `--global`. Skill chỉ tác động đến dự án hiện tại, và cũng giúp bạn dễ dàng kiểm tra nội dung sau khi cài rồi mới quyết định có đưa chúng vào version control hay không.
+
+#### 3. Kiểm tra vị trí cài đặt
+
+Liệt kê các skill đã cài trong dự án hiện tại và trong thư mục user:
+
+```
+npx skills list
+```
+
+Các coding assistant đọc các thư mục khác nhau:
+
+| Coding assistant | Thư mục cấp dự án   | Thư mục global       |
+| ---------------- | ------------------- | -------------------- |
+| Codex            | `.agents/skills/`   | `~/.agents/skills/`  |
+| Claude Code      | `.claude/skills/`   | `~/.claude/skills/`  |
+| Cursor           | `.agents/skills/`   | `~/.agents/skills/`  |
+
+Cài cấp dự án là hành vi mặc định. `--global` sẽ ghi vào thư mục cấp user, không ghi vào `.agents/skills/` của dự án hiện tại.
+
+Nếu bạn chọn Codex, có thể kiểm tra entry point của skill:
+
+```
+ls .agents/skills/langchain-dev-guide/SKILL.md
+ls .agents/skills/langsmith-trace/SKILL.md
+```
+
+Nếu bạn chọn Claude Code, hãy thay đường dẫn bằng `.claude/skills/`.
+
+#### 4. Dùng langchain-dev-guide
+
+`langchain-dev-guide` tổng hợp các vấn đề cấu hình và runtime thường gặp khi phát triển trong hệ sinh thái LangChain, chủ yếu bao gồm:
+
+- Model, filesystem, sub-Agent và long-term memory của DeepAgents
+- Giao diện tương thích OpenAI và cách tích hợp model nội địa Trung Quốc
+- Middleware, streaming output và orchestration đa Agent
+- Structured output, Tool Call và các vấn đề runtime context
+
+Nhập một task cụ thể vào coding assistant, và nêu rõ tên skill:
+
+```
+Hãy dùng langchain-dev-guide kiểm tra cấu hình model của dự án deepagents/research này.
+Khóa học mặc định dùng GLM qua giao diện tương thích OpenAI của SiliconFlow.
+Hãy đối chiếu các biến môi trường, và nêu ranh giới tương thích của các capability như Tool Call, reasoning_content.
+```
+
+Coding assistant sẽ đọc `langchain-dev-guide/SKILL.md` trước, rồi đọc các tài liệu tham khảo mà nó trích dẫn khi cần. Bạn có thể yêu cầu assistant nêu rõ đã dùng file tham khảo nào để xác nhận skill đã có hiệu lực.
+
+Một ví dụ khác:
+
+```
+Hãy dùng langchain-dev-guide để thêm một Middleware tùy chỉnh cho research Agent này.
+Kiểm tra thứ tự thực thi của Middleware và quy tắc hợp nhất state_schema trước, rồi mới đưa ra phương án sửa đổi.
+```
+
+#### 5. Thực hành: dùng langsmith-trace định vị một lượt gọi chậm (5–10 phút)
+
+Phần này dùng Trace được sinh bởi `deepagents/research` ở chương trước. Sau khi xong, bạn sẽ chỉ ra được research chậm ở đâu, căn cứ phán đoán là gì, và bước tiếp theo tối ưu thế nào.
+
+Xác nhận trước khi bắt đầu:
+
+- Chương trước đã bật `LANGSMITH_TRACING=true`
+- `.env` đã set `LANGSMITH_API_KEY` và `LANGSMITH_PROJECT=deepagents-course`
+- Có ít nhất một Trace `research` đã hoàn tất trong `deepagents-course` hoặc `default`
+- Dự án hiện tại đã cài `langsmith-trace`
+
+##### 5.1 Kiểm tra CLI và xác thực
+
+Trước tiên xác nhận LangSmith CLI có dùng được không.
+
+macOS / Linux / WSL2:
+
+```
+command -v langsmith
+langsmith --version
+```
+
+PowerShell Windows nguyên sinh:
+
+```
+if (Get-Command langsmith -ErrorAction SilentlyContinue) {
+  langsmith --version
+} else {
+  Write-Warning "LangSmith CLI chưa được cài; hãy thực hiện bước cài đặt Windows phía dưới trước."
+}
+```
+
+Nếu lệnh không tồn tại, dùng script cài đặt chính thức của LangSmith CLI.
+
+macOS / Linux / WSL2:
+
+```
+curl -fsSL https://cli.langsmith.com/install.sh | sh
+```
+
+PowerShell Windows nguyên sinh:
+
+```
+irm https://cli.langsmith.com/install.ps1 | iex
+```
+
+Sau khi cài xong, đóng và mở lại terminal rồi chạy `langsmith --version`. Nếu vẫn không tìm thấy lệnh, hãy sửa PATH theo output của installer. Script cài đặt và version mới nhất xem tại [repository chính thức của LangSmith CLI](https://github.com/langchain-ai/langsmith-cli).
+
+Package `langsmith` trên PyPI là Python SDK, không cung cấp file thực thi CLI dùng ở đây; đừng dùng `uv tool install langsmith` để cài LangSmith CLI.
+
+LangSmith CLI đọc credentials từ biến môi trường. Hãy load `.env` tại thư mục gốc dự án.
+
+macOS / Linux / WSL2:
+
+```
+set -a
+source .env
+set +a
+```
+
+PowerShell Windows nguyên sinh:
+
+```
+Get-Content .env | ForEach-Object {
+  if ($_ -match '^\s*([A-Za-z_][A-Za-z0-9_]*)=(.*)$') {
+    $value = $matches[2] -replace '^"(.*)"$', '$1'
+    Set-Item -Path "Env:$($matches[1])" -Value $value
+  }
+}
+```
+
+Đoạn PowerShell chỉ load các dòng `KEY=value` thường gặp trong `.env` của khóa học và bỏ qua comment cùng các định dạng khác; nó không thực thi `.env` như một script PowerShell.
+
+Xác nhận credentials hợp lệ và tìm project gần đây có run:
+
+```
+langsmith --format pretty project list
+```
+
+Bạn sẽ thấy `deepagents-course` trong danh sách. Nếu Trace `research` gần nhất đã vào `default`, có thể đổi tên project trong các lệnh phía sau thành `default` để phân tích trực tiếp Trace sẵn có. `LANGSMITH_PROJECT` chỉ ảnh hưởng đến các run trong tương lai; chỉ khi cả hai project đều chưa có Trace `research` hoàn tất mới cần sửa cấu hình và chạy lại câu hỏi research.
+
+Đừng ghi Key thật vào lệnh Shell và đừng dùng `--api-key`. Lệnh có thể lọt vào Shell history, danh sách process hoặc log của coding assistant.
+
+##### 5.2 Tìm Trace đầy đủ
+
+Trước tiên liệt kê các Trace gốc gần đây:
+
+```
+langsmith trace list --project deepagents-course --name research --include-metadata --limit 5
+```
+
+Copy `trace_id` của node gốc `research` mới nhất có trạng thái hoàn tất, rồi xem cây run đầy đủ:
+
+```
+langsmith trace get <trace-id> --project deepagents-course --include-metadata
+```
+
+`<trace-id>` là placeholder, hãy thay bằng ID thật trả về ở bước trước. Bạn sẽ thấy node gốc `research`, sub-Agent `research-agent`, các lượt gọi model `ChatOpenAI`, lượt gọi tool `tavily_search`, cùng nhiều lớp bọc middleware.
+
+##### 5.3 Để coding assistant phân tích bottleneck
+
+Nhập vào Codex, Claude Code hoặc coding assistant khác đã cài skill:
+
+```
+Hãy dùng langsmith-trace phân tích Trace research đã hoàn thành gần nhất trong LangSmith project vừa xác nhận.
+Ưu tiên dùng deepagents-course; nếu Trace nằm trong default thì dùng default.
+
+Hãy xác nhận project và trace_id trước, rồi phân biệt:
+1. Luồng research gốc;
+2. Sub-Agent research-agent;
+3. Lượt gọi model thực tế có run_type=llm;
+4. Lượt gọi tool thực tế như tavily_search.
+
+Tìm riêng lượt gọi model leaf chậm nhất và lượt gọi tool thực tế chậm nhất.
+Đừng lấy luôn Trace gốc, lớp bọc sub-Agent task hay lớp bọc middleware làm bottleneck.
+Với các Run ứng viên, dùng run get --include-io để kiểm tra input, output và error.
+
+Cuối cùng xuất bảng: lượt gọi, loại, thời gian, bằng chứng phán đoán, nguyên nhân khả dĩ, đề xuất bước tiếp theo.
+Không xuất API Key hay credentials khác.
+```
+
+Skill sẽ thu hẹp phạm vi theo kiểu run trước, đừng xuất input/output của tất cả Run cùng lúc:
+
+```
+langsmith run list --trace-ids <trace-id> --project deepagents-course --run-type llm --include-metadata --limit 100
+langsmith run list --trace-ids <trace-id> --project deepagents-course --run-type tool --include-metadata --limit 100
+```
+
+LangSmith API hiện giới hạn mỗi lần `run list` tối đa 100. Trace research phức tạp có thể vượt số lượng này; hãy lọc bằng `--run-type` trước, cần thì thu hẹp thêm bằng `--name`, tránh kết quả bị cắt cụt hoặc xuất quá nhiều IO ra terminal. Trong kết quả tool, `task` là lớp bọc sub-Agent, đừng coi nó là bottleneck tool thực tế. Hệ phân cấp đầy đủ vẫn lấy `trace get` làm chuẩn.
+
+Sau khi tìm được `run_id` ứng viên, dùng tường minh `--include-io` để xem một lượt gọi:
+
+```
+langsmith run get <run-id> --include-io --include-metadata
+```
+
+Đừng thay bằng `run get --full`. Ở một số version CLI, `--full` có thể trả về input/output rỗng; dùng tường minh `--include-io` ổn định hơn.
+
+##### 5.4 Kiểm tra kết quả phân tích
+
+Một lần phân tích đạt chuẩn tối thiểu bao gồm:
+
+| Mục kiểm tra        | Tiêu chí hoàn thành                            |
+| ------------------- | ---------------------------------------------- |
+| Chọn Trace          | Dùng Trace `research` đã hoàn thành gần nhất   |
+| Phân biệt tầng cấp | Phân biệt được luồng gốc, sub-Agent, model và tool |
+| Bottleneck model    | Tìm được Run leaf `run_type=llm` chậm nhất     |
+| Bottleneck tool     | Tìm được Run tool thực tế chậm nhất, ví dụ `tavily_search` |
+| Bằng chứng          | Đưa ra `run_id`, thời gian, trạng thái và kết quả kiểm tra input/output |
+| Đề xuất             | Đề xuất tương ứng với bằng chứng, chứ không chỉ nói "đổi model nhanh hơn" |
+
+Trace research được đo trong bài gồm 162 Run, 0 lỗi, tổng thời gian khoảng 472,9 giây. Sau khi truy vấn đủ 22 Run model theo kiểu, lượt gọi `ChatOpenAI` leaf chậm nhất khoảng 85,9 giây; sau khi truy vấn đủ 17 Run tool và loại bỏ lớp bọc `task`, tool thực tế chậm nhất là `tavily_search` khoảng 25,1 giây. Kết quả của bạn sẽ thay đổi theo model, mạng, câu hỏi và version template; đừng coi các con số này là kỳ vọng cố định.
+
+Trace có thể lưu prompt, tham số tool và output của model. Nếu bạn xử lý dữ liệu nhạy cảm, có thể đặt `LANGSMITH_HIDE_INPUTS=true` và `LANGSMITH_HIDE_OUTPUTS=true`; khi bật, input/output của Run dùng để phân tích nội dung ở phần này sẽ bị ẩn.
+
+#### 6. Cập nhật skill
+
+Chỉ cập nhật skill trong dự án hiện tại:
+
+```
+npx skills update -p
+```
+
+Nếu sau này bạn dùng cài đặt global, chỉ cập nhật skill global:
+
+```
+npx skills update -g
+```
+
+Sau khi cập nhật, chạy lại:
+
+```
+npx skills list
+```
+
+#### 7. Tùy chọn: cài vào thư mục user
+
+Nếu bạn muốn dùng hai skill này trong mọi dự án, có thể chạy:
+
+```
+npx skills add ob-labs/agentseek --skill langchain-dev-guide --skill langsmith-trace --global
+```
+
+Cài global phù hợp cho cá nhân dùng lâu dài. Dự án đội nhóm vẫn nên giữ cài đặt cấp dự án, để các skill dự án cần có thể được thành viên khác thấy và dùng.
+
+#### Gỡ skill
+
+Khi không còn cần các skill cấp dự án này, có thể gỡ:
+
+```
+npx skills remove langchain-dev-guide langsmith-trace --yes
+```
+
+#### Kết quả sau khi hoàn thành chương
+
+Bạn hiện có:
+
+- `langchain-dev-guide` và `langsmith-trace` đã cài trong dự án hiện tại
+- Bộ lệnh kiểm tra, cập nhật và gỡ dev skill
+- Ranh giới rõ ràng giữa skill của coding assistant và DeepAgents runtime Skill
+
+Tiếp theo, bạn có thể để coding assistant dùng hai skill này chỉnh sửa ứng dụng research được sinh ở chương trước, hoặc học tiếp DeepAgents runtime Skills ở chương 7.
+
+Nguồn tham khảo: [AgentSeek Skills](https://github.com/ob-labs/agentseek/tree/main/skills), [Skills CLI](https://github.com/vercel-labs/skills), [langchain-dev-guide](https://github.com/ob-labs/agentseek/tree/main/skills/langchain-dev-guide), [langsmith-trace](https://github.com/ob-labs/agentseek/tree/main/skills/langsmith-trace), [LangSmith CLI](https://docs.langchain.com/langsmith/langsmith-cli), [LangSmith 数据脱敏](https://docs.langchain.com/langsmith/mask-inputs-outputs).
+
+#### Tài nguyên liên quan
+
+Hướng dẫn phát triển LangChain / DeepAgents — [Video讲解 Bilibili](https://www.bilibili.com/video/BV1GVJP6UEaB/), [Ảnh bài viết Xiaohongshu](http://xhslink.com/o/8b9xPADEwDL)
+
+LangSmith Trace: theo dõi và debug chuỗi gọi — [Video讲解 Bilibili](https://www.bilibili.com/video/BV1xFjA6ZEWB/), [Ảnh bài viết Xiaohongshu](http://xhslink.com/o/1eXpfomXOi6)
