@@ -1,161 +1,153 @@
 # Deep Agents v0.7: Harness nhẹ hơn, minh bạch hơn và cấu hình được hơn
 
-> Một Deep Agent đang chạy thực tế sau khi nâng cấp lên v0.7: hóa đơn có thể giảm, cũng có thể không thay đổi rõ rệt; nó có thể tiếp tục hoàn thành task ổn định, cũng có thể đột nhiên không còn sinh Todo. Nguyên nhân là v0.7 đã điều chỉnh phạm vi những quyết định mà Harness mặc định đưa ra thay ứng dụng.
+> **Một Deep Agent đang chạy thực tế sau khi nâng cấp lên v0.7:** Hóa đơn có thể giảm mạnh, nhưng cũng có thể không đổi; agent có thể chạy mượt mà, nhưng cũng có thể đột nhiên không còn tự động tạo danh sách công việc (Todo).  
+> Nguyên nhân cốt lõi: **v0.7 đã thay đổi triết lý thiết kế — framework không còn tự ý đưa ra các quyết định ngầm thay cho ứng dụng.**
 
-Khóa học này bắt đầu từ Deep Agents 0.5, và các chương trước vẫn giữ lại dấu vết framework tiến hóa dần qua 0.5, 0.6. v0.7 tiếp tục con đường học tập đó và đẩy baseline của khóa học thêm một bước: nó giảm bớt ngữ cảnh chung cố định phải mang theo mỗi lượt, trả các chiến lược như lập kế hoạch về lại cho ứng dụng, và bổ sung đầy đủ khả năng cấu hình cho file tool và Middleware. Bạn đọc mới có thể bắt đầu trực tiếp với bản patch 0.7.x mới nhất; bạn đọc cũ nên hoàn thành các kiểm tra migration của chương này trước rồi mới tiếp tục các thí nghiệm phía sau.
+---
 
-Deep Agents v0.7 gỡ bỏ một loạt scaffolding không còn cần thiết phổ quát: base prompt mặc định trở nên rỗng, mô tả tool rút ngắn, `TodoListMiddleware` đổi sang bật theo nhu cầu. Framework cũng mở khả năng thay thế tại chỗ (in-place) cho Middleware, và điều chỉnh cả năng lực lẫn semantics output của file tool.
+### Khái niệm mở đầu: "Harness" trong Deep Agents là gì?
 
-Thay đổi về kiến trúc rất rõ: lớp mặc định mỏng hơn, các chiến lược trước đây giấu trong framework giờ cần ứng dụng chọn một cách tường minh.
+Để hiểu bản cập nhật v0.7, trước tiên cần hiểu khái niệm **Harness** (bộ khung điều khiển).  
+Khi bạn gọi `create_deep_agent()`, framework không chỉ đơn thuần gửi câu hỏi của bạn tới mô hình ngôn ngữ (LLM). Nó bọc mô hình vào một "chiếc áo giáp" gồm:
+1. **Base system prompt mặc định** (hướng dẫn mô hình cách suy nghĩ, cách trả lời).
+2. **Bộ Middleware mặc định** (tự động lập Todo, tự động tóm tắt tin nhắn cũ, quản lý file).
+3. **Mô tả chi tiết các Tool** (hướng dẫn LLM cách gọi từng công cụ).
 
-Chương này lấy [`deepagents==0.7.0` changelog](https://docs.langchain.com/oss/python/releases/changelog#deepagents-v0-7-0) và [blog phát hành Deep Agents v0.7](https://www.langchain.com/blog/deep-agents-v0-7) làm baseline cho hành vi phát hành ban đầu, đồng thời tiếp tục đối chiếu các báo cáo đánh giá, tài liệu chính thức và PR triển khai mà chúng trỏ tới. Trọng tâm là nhận diện ứng dụng bị ảnh hưởng, quyết định có khôi phục default cũ hay không, và xác minh hành vi sau nâng cấp.
+Ở các phiên bản 0.5 và 0.6, chiếc "áo giáp" này rất dày và cồng kềnh. **Deep Agents v0.7 đã gọt mỏng tối đa lớp áo giáp này:** base prompt mặc định trở nên rỗng, mô tả tool được tinh giản ngắn gọn, tính năng lập Todo chuyển sang bật theo nhu cầu, và Middleware cho phép ứng dụng tự do ghi đè tại chỗ.
 
-Việc học và migration hằng ngày nên cài bản patch 0.7.x hiện tại, đồng thời giới hạn trong cùng một minor version:
+> [!NOTE]
+> Bạn đọc mới có thể bắt đầu trực tiếp với bản patch 0.7.x mới nhất. Nếu bạn đang nâng cấp từ dự án cũ (0.5/0.6), hãy hoàn thành các bước kiểm tra migration trong tài liệu này trước khi chạy trên môi trường production.
 
-```
+Cài đặt bản patch 0.7.x trong cùng một minor version:
+
+```bash
 uv add --upgrade "deepagents>=0.7,<0.8"
 uv run python -c "import deepagents; print(deepagents.__version__)"
 ```
 
-Hãy commit `uv.lock` của dự án, hoặc lưu snapshot môi trường tương đương, mới ghi lại được version chính xác thực tế được resolve. Nếu muốn tái hiện từng mục trong changelog phát hành đầu của v0.7.0, hãy pin version trong một môi trường tạm riêng:
+Nếu muốn tái hiện chính xác từng hành vi phát hành đầu tiên của bản 0.7.0 để đối chiếu bug/changelog:
 
-```
+```bash
 uv add "deepagents==0.7.0"
 ```
 
-Đừng nâng cấp tại chỗ trực tiếp trong môi trường production. v0.7 đồng thời thay đổi Middleware mặc định, giao diện tương thích Backend và output của file tool; chỉ nhìn "import có thành công không" không chứng minh được migration đã xong.
+> [!CAUTION]
+> **Đừng nâng cấp tại chỗ trực tiếp trong môi trường production!**  
+> v0.7 đồng thời thay đổi Middleware mặc định, giao diện Backend và định dạng trả về của các file tool. Chỉ kiểm tra `import` thành công không chứng minh được ứng dụng của bạn đã tương thích.
 
-## 1. Trước tiên xác định những chính sách mặc định nào đã thay đổi
+---
 
-Nhìn từ góc độ người dùng, v0.7 có bốn nhóm thay đổi; nhìn từ góc độ kiến trúc, chúng cùng chỉ một hướng.
+## 1. Trước tiên xác định: Những chính sách mặc định nào đã thay đổi?
 
-| Thay đổi bề mặt | Phán đoán thiết kế | Trách nhiệm ứng dụng cần tiếp nhận |
-| --------------- | ------------------ | ---------------------------------- |
-| Base prompt mặc định rỗng, mô tả tool rút ngắn | Model hiện đại hiểu interface từ tool Schema tốt hơn, không cần đọc lại giải thích kiểu tutorial | Viết rõ system prompt thực sự thuộc về nghiệp vụ, và dùng Trace kiểm tra xung đột và trùng lặp |
-| Todo không còn bật mặc định | Lập kế hoạch tường minh không phải lợi ích phổ quát cho mọi task | Quyết định có khôi phục hay không dựa trên độ dài task, khả năng model và nhu cầu UI |
-| Middleware cùng tên có thể thay thế tại chỗ | Stack built-in nên cung cấp default hợp lý, nhưng không nên khóa cứng threshold, model và prompt | Quản lý tường minh cấu hình đầy đủ và phạm vi kế thừa của instance thay thế |
-| File tool mạnh hơn và có ranh giới hơn | Agent cần xử lý file và thư mục lớn hiệu quả, đồng thời tránh tìm kiếm vô hạn | Rà soát lại delete, ghi đè (overwrite), parse output, permission và truncation kết quả |
+Thay vì cố gắng đoán mò, hãy nhìn vào 4 thay đổi lớn mang tính bước ngoặt từ v0.6 lên v0.7:
 
-Duyệt changelog từng dòng rồi hỏi máy móc "tính năng này tôi có dùng không" rất dễ bỏ qua dependency ngầm. Hãy trả lời các câu hỏi sau trước:
+| Thay đổi bề mặt | Bản chất thiết kế | Trách nhiệm mà ứng dụng cần tiếp nhận |
+| :--- | :--- | :--- |
+| **Base prompt mặc định rỗng, mô tả tool rút ngắn** | Các LLM hiện đại đã đủ thông minh để hiểu cách dùng tool qua Tool Schema (JSON), không cần framework phải "dạy kèm" bằng prompt tutorial dài dòng. | Tự viết `system_prompt` sát với nghiệp vụ của bạn; dùng công cụ Trace (như LangSmith) để kiểm tra mô hình có hiểu đúng ngữ cảnh không. |
+| **Todo không còn bật mặc định** | Việc bắt buộc lập danh sách Todo ở mọi lượt gọi gây lãng phí token cho các tác vụ ngắn, đơn giản. | Tự quyết định có cần bật lại `TodoListMiddleware` hay không dựa trên độ phức tạp của task và nhu cầu hiển thị UI. |
+| **Middleware cùng tên có thể thay thế tại chỗ** | Framework cung cấp sẵn cấu hình mẫu, nhưng cho phép bạn tự do tùy biến tham số (threshold, model, prompt) mà không phải gỡ tung toàn bộ hệ thống. | Quản lý tường minh cấu hình trọn gói của Middleware thay thế (tránh bẫy mất Backend hay Permission). |
+| **File tool mạnh hơn và có ranh giới rõ ràng** | Cung cấp thêm tool mạnh (`delete`, ghi đè `write_file`, phân trang `read_file`), đồng thời giới hạn tìm kiếm để tránh tràn bộ nhớ repo lớn. | Rà soát kỹ quyền hạn (Permission), cơ chế ghi đè, và sửa lại code nếu có đoạn nào đang tự parse văn bản trả về của tool. |
 
-1. Trước đây ứng dụng của tôi phụ thuộc vào những **default ngầm** nào?
-2. Default nào vẫn có giá trị trong task của tôi và nên được khôi phục tường minh?
-3. Những chỗ nào tiêu thụ **raw text của file tool hoặc giao diện tương thích Backend**?
-4. Tôi dùng đánh giá nghiệp vụ nào để chứng minh Harness nhẹ hơn không làm thay đổi hành vi then chốt?
+Trước khi sửa code, hãy tự trả lời 4 câu hỏi định hướng:
+1. Trước đây ứng dụng của tôi có phụ thuộc vào **hành vi mặc định ngầm** nào của framework không? (ví dụ: tự động có Todo, tự động chặn ghi đè file).
+2. Hành vi nào trong số đó thực sự cần thiết cho nghiệp vụ của tôi và cần được bật lại một cách tường minh?
+3. Code của tôi có chỗ nào đang trực tiếp **đọc text thô (raw text)** trả về từ tool không?
+4. Tôi có bộ bài test nghiệp vụ nào để chứng minh agent mới vẫn chạy đúng như cũ hay không?
 
-Toàn bộ nội dung phía sau xoay quanh bốn câu hỏi này.
+---
 
-## 2. Hiểu đúng "giảm 65% input Token nền"
+## 2. Hiểu đúng về con số: "Giảm 65% input Token nền"
 
-Hai con số chính thức đưa ra mô tả những phạm vi khác nhau:
+Khi đọc thông báo phát hành v0.7, bạn sẽ thấy con số ấn tượng: *"giảm 65% input token"*. Hãy hiểu chính xác con số này để không kỳ vọng sai lệch về hóa đơn thực tế.
 
-- Mô tả tool Schema của Agent mặc định giảm từ **4.005 Token xuống 2.302 Token**, mức giảm 43%. Trong đó mô tả tool `task` giảm từ 1.664 xuống 389 Token, là khoản cắt giảm đơn lẻ lớn nhất.
-- Cộng thêm base prompt rỗng và Todo chuyển thành tùy chọn, input của một lượt đơn giản của Agent mặc định giảm từ **5.395 Token xuống 1.895 Token**, tức input nền giảm khoảng 65%.
+### Token nền (Baseline Overhead) là gì?
 
-Hai con số này cho thấy "chi phí cố định của framework phải mang theo mỗi lượt" giảm rõ rệt, nhưng không thể suy ra "tổng chi phí của bất kỳ ứng dụng nào cũng giảm 65%". Một lượt gọi thật còn bao gồm:
+* **Mô tả Tool Schema:** Giảm từ **4.005 token xuống 2.302 token** (giảm 43%). Riêng mô tả tool `task` rút ngắn từ 1.664 xuống 389 token.
+* **Tổng token nền của một lượt gọi:** Khi cộng thêm việc bỏ base prompt và bỏ Todo mặc định, một lượt gọi đơn giản giảm từ **5.395 token xuống còn 1.895 token** — tức overhead nền giảm **~65% (bớt được ~3.500 token)**.
 
-- Tin nhắn người dùng và lịch sử hội thoại
-- Skills, Memory và system prompt riêng của ứng dụng
-- Tham số và kết quả của các lượt gọi tool
-- Trace của sub-Agent
-- Summarization và retry khi thất bại
-- Cache hit và quy tắc tính phí của nhà cung cấp model
+> [!IMPORTANT]
+> **Token nền giống như "vé vào cổng cố định", còn chi phí cả lượt gọi giống như "tổng tiền ăn uống vui chơi":**  
+> - Nếu bạn làm bot hỏi-đáp ngắn (mỗi lượt chỉ 500 token hội thoại), việc bớt được 3.500 token nền sẽ giúp bạn **tiết kiệm cực kỳ nhiều**.  
+> - Nhưng nếu agent của bạn chạy tác vụ phức tạp (long-context repo lớn, đọc hàng trăm nghìn token tài liệu, gọi hàng chục tool), thì việc tiết kiệm 3.500 token chỉ chiếm một tỉ lệ rất nhỏ trong tổng hóa đơn.
 
-Nếu một task long-range vốn đã có hàng trăm nghìn Token lịch sử và kết quả tool, bớt khoảng 3.500 input Token nền vẫn có giá trị, nhưng tỉ lệ trên tổng chi phí sẽ không là 65%.
+### 2.1 Đánh giá Benchmark: Tiết kiệm tổng thể, nhưng không đồng đều giữa các Model
 
-### 2.1 Đánh giá end-to-end thể hiện "xu hướng tổng thể", không phải lợi ích đồng nhất
+LangChain đã chạy kiểm thử trên [hệ thống benchmark Harbor](https://www.langchain.com/blog/how-we-benchmark-deep-agents) với 36 tác vụ thực tế (mỗi tác vụ chạy 3 lần trên 4 mô hình LLM hàng đầu):
 
-[Hệ thống đánh giá Deep Agents](https://www.langchain.com/blog/how-we-benchmark-deep-agents) mới của chính thức không còn chỉ dựa vào các bài unit nhỏ, mà bao phủ ba loại công việc của Agent:
+| Model | Điểm hoàn thành (Reward) | Lượng Token | Chi phí thực tế | Cách đọc đúng kết quả |
+| :--- | :---: | :---: | :---: | :--- |
+| **`gpt-5.6-luna`** | +3,8% | **-35,5%** | **-15,2%** | Token và chi phí giảm rõ rệt nhất; độ chính xác giữ vững. |
+| **`gemini-3.6-flash`** | -6,7% | -4,7% | -8,1% | Biến động nhỏ nằm trong giới hạn sai số thống kê; hiệu năng gần như tương đương. |
+| **`claude-sonnet-4-6`** | +3,1% | **+31,3%** | **+36,8%** | **Chú ý:** Token và chi phí lại tăng! Khi không có prompt và Todo "kìm cương", Sonnet có xu hướng tự mò mẫm thử nghiệm nhiều tool call hơn trên các bài toán khó, dẫn đến chuỗi trace dài hơn. |
+| **`claude-opus-4-8`** | -5,1% | **-25,4%** | **-16,4%** | Token giảm mạnh; tỷ lệ thành công ổn định. |
 
-| Loại đánh giá           | Quan sát gì                                | Vì sao liên quan đến nâng cấp                   |
-| ----------------------- | ------------------------------------------ | ----------------------------------------------- |
-| Autonomous              | Các task end-to-end như lập trình, phân tích dữ liệu, dùng tool long-range | Kiểm tra sau khi gỡ scaffolding, Agent còn tự chủ hoàn thành công việc nhiều bước không |
-| Conversational          | Hội thoại nhiều lượt mô phỏng người dùng tham gia | Kiểm tra prompt mặc định ít hơn có ảnh hưởng đến câu hỏi tiếp theo, việc chọn tool và mục tiêu phiên không |
-| Long-context / Retrieval | Truy xuất và tổng hợp câu trả lời trong long context kèm theo task | Kiểm tra Prompt nhẹ hơn có làm model mất năng lực long-context không |
+> [!TIP]
+> **Bài học rút ra:** v0.7 giúp khung framework nhẹ đi, nhưng **hành vi của từng mô hình LLM là khác nhau**. Không thể mặc định rằng nâng cấp lên v0.7 là hóa đơn sẽ tự động giảm cho mọi bài toán.
 
-Task đánh giá Harbor đồng thời gồm môi trường chạy, mô tả task và script nghiệm thu. Điểm số dựa trên file Agent chỉnh sửa và trạng thái môi trường, chứ không chỉ dựa vào câu trả lời cuối có "giống đáp án" hay không. Mỗi task còn được chạy lặp lại để giảm dao động ngẫu nhiên do tính không xác định (non-determinism) của Agent.
+### 2.2 Ba chỉ số bắt buộc phải đo khi nâng cấp
 
-Trong so sánh chéo version giữa v0.6.12 và v0.7, phía chính thức chạy 36 task, mỗi task 3 rollout, phủ bốn model. Kết quả chính xác có giá trị định hướng hơn nhiều so với "tiết kiệm hơn một cách phổ quát":
+1. **Overhead nền:** Đo lượng token của 1 câu hỏi ngắn nhất để xác nhận framework đã nhẹ đi (~1.900 token thay vì ~5.400 token).
+2. **Hiệu quả chuỗi xử lý (Trace):** Đếm số lần LLM phải gọi lại, số lượt gọi tool, số lần retry để hoàn thành cùng một nhiệm vụ.
+3. **Kết quả nghiệp vụ thực tế:** Tác vụ có thực sự hoàn thành đúng yêu cầu hay không (dựa trên test case thực tế, không chỉ dựa vào cảm tính).
 
-| Model                | Reward | Token   | Chi phí  | Cách đọc đúng                                       |
-| -------------------- | ------ | ------- | -------- | --------------------------------------------------- |
-| `gpt-5.6-luna`       | +3,8%  | -35,5%  | -15,2%   | Token và chi phí giảm rõ nhất; thay đổi Reward vẫn nằm trong khoảng không chắc chắn |
-| `gemini-3.6-flash`   | -6,7%  | -4,7%   | -8,1%    | Cả ba khoảng tin cậy đều vượt qua số 0, không thể căn cứ vào đây mà khẳng định chắc chắn tốt hơn hay tệ hơn |
-| `claude-sonnet-4-6`  | +3,1%  | +31,3%  | +36,8%   | Hai task tự trị độ khó cao cho trace dài hơn, triệt tiêu phần tiết kiệm từ base Prompt |
-| `claude-opus-4-8`    | -5,1%  | -25,4%  | -16,4%   | Token giảm rõ rệt; thay đổi Reward và chi phí vẫn không thể coi là kết luận phổ quát |
+---
 
-Khoảng tin cậy Reward của tất cả model đều vượt qua số 0, nên kết luận chính thức là "chất lượng tổng thể không có regression đo được", không thể viết lại thành "v0.7 làm mọi model tăng chất lượng". Mức giảm Token của Luna và Opus rõ hơn, mức giảm chi phí của Luna cũng rõ hơn; kết quả của Sonnet cho thấy overhead nền thấp hơn không bảo đảm trace của Agent ngắn hơn.
+## 3. Prompt mặc định rỗng: Tách chỉ dẫn nghiệp vụ khỏi giao diện Tool
 
-### 2.2 Hướng dẫn thực tế cho dự án
+Ở v0.6, framework tự động chèn một đoạn base prompt rất dài để dạy mô hình: *"Bạn là một AI assistant, bạn có các công cụ sau, bạn nên dùng chúng như thế này..."*.  
+Ở v0.7, **toàn bộ đoạn văn mẫu đó đã bị xóa bỏ.**
 
-Nghiệm thu nâng cấp tối thiểu phải ghi chép tách biệt ba loại chỉ số:
+Thay đổi này dựa trên 2 nguyên lý Context Engineering hiện đại:
+1. **Giao diện (Interface) quan trọng hơn ví dụ (Few-shot):** Tên tham số, kiểu dữ liệu, enum và mô tả ngắn gọn trong JSON Schema của Tool đã đủ để LLM hiện đại biết cách dùng. Đưa quá nhiều ví dụ văn bản dài dòng có thể làm mô hình bị đóng khung tư duy hoặc hiểu nhầm.
+2. **Tránh lặp lại thông tin (No Redundancy):** Một ràng buộc vừa viết trong System Prompt vừa viết trong mô tả Tool không làm mô hình tuân thủ gấp đôi, mà chỉ làm tốn token vĩnh viễn và dễ gây xung đột khi cập nhật.
 
-1. **Overhead nền**: input tokens của lượt đơn giản, xác minh Harness mặc định thực sự nhẹ đi.
-2. **Hiệu quả trace**: số lượt model, số lượt gọi tool, số lượt gọi sub-Agent và số retry cần để hoàn thành cùng một task.
-3. **Kết quả nghiệp vụ**: task có qua nghiệm thu thật hay không, chứ không phải văn bản cuối trông có vẻ hợp lý hay không.
+### 3.1 `system_prompt` của bạn giờ đây nắm quyền tối cao
 
-Nếu chỉ so sánh mục đầu tiên, rất dễ rút ra kết luận sai trong các kịch bản kiểu Sonnet. Quyết định production nên dựa trên model, prompt, tập tool và phân bố task của chính bạn.
+Trước đây, prompt của bạn bị pha trộn với base prompt của framework. Nay lớp nền đã rỗng, mô hình sẽ hoàn toàn tập trung vào những gì bạn yêu cầu:
 
-## 3. Prompt mặc định rỗng: tách chỉ dẫn nghiệp vụ khỏi interface của tool
-
-v0.7 gỡ bỏ base prompt chung mà Deep Agents trước đây thêm vào, đồng thời xóa các hướng dẫn sử dụng Middleware trùng lặp với tool Schema. Cái bị xóa ở đây là "cách làm việc chung do framework viết hộ", không phải các thông tin chỉ biết lúc runtime như Skills, Memory hay routing đường dẫn file.
-
-Đằng sau thay đổi này là hai nguyên tắc context engineering:
-
-- **Interface hơn ví dụ**: tên tool, kiểu tham số, enum và ràng buộc rõ ràng có thể diễn đạt trực tiếp các hành động khả dụng; quá nhiều ví dụ few-shot ngược lại có thể giới hạn model vào đúng đường khám phá mà ví dụ thể hiện.
-- **Tránh lặp lại**: cùng một ràng buộc viết vào cả system prompt lẫn mô tả tool sẽ không tự động nhận được mức tuân thủ gấp đôi, nhưng lại tăng vĩnh viễn input mỗi lượt và tăng xác suất xung đột.
-
-Hướng này nhất quán với điều Anthropic chia sẻ trong [kinh nghiệm context engineering cho thế hệ model mới](https://claude.com/blog/the-new-rules-of-context-engineering-for-claude-5-generation-models): họ tinh giản mạnh system prompt của Claude Code cho các model mạnh hơn, và nhấn mạnh dẫn dắt model qua thiết kế interface thay vì qua hàng loạt ví dụ tool call.
-
-### 3.1 System prompt tùy chỉnh giờ "có tiếng nói quyết định" hơn
-
-Trước đây, `system_prompt` ứng dụng truyền vào sẽ cùng base prompt của framework hợp thành ngữ cảnh. Ngay cả khi hai đoạn không xung đột trực tiếp, chúng vẫn có thể quy định lặp giọng điệu, lập kế hoạch hay cách làm việc. Lớp nền mặc định của v0.7 rỗng, nên ý nghĩa prompt của ứng dụng trực tiếp hơn:
-
-```
+```python
 from deepagents import create_deep_agent
 
 agent = create_deep_agent(
     model=model,
     system_prompt=(
-        "Bạn là trợ lý migration code. Hãy đọc ràng buộc version và điểm vào test trong repository trước, "
-        "chỉ sửa các file liên quan đến mục tiêu migration; sau khi xong hãy chạy test sẵn có của dự án, "
-        "và báo cáo rõ những phần chưa xác minh được."
+        "Bạn là trợ lý migration code. Hãy đọc ràng buộc version và file test trước, "
+        "chỉ sửa các file liên quan trực tiếp đến mục tiêu migration; sau khi xong hãy chạy test sẵn có, "
+        "và báo cáo rõ những phần chưa thể xác minh tự động."
     ),
 )
 ```
 
-Đừng vì "bản cũ có một đoạn base Prompt dài" mà copy toàn bộ nội dung cũ vào ứng dụng. Hãy bắt đầu từ những ràng buộc task thực sự cần, rồi bổ sung qua các case thất bại. Nếu không, bạn sẽ mang trở lại đúng chi phí cố định và xung đột tiềm ẩn mà v0.7 vừa gỡ bỏ.
+> [!WARNING]
+> **Đừng copy-paste toàn bộ base prompt cũ vào lại code mới!**  
+> Làm như vậy sẽ mang đúng khoản chi phí token vô ích và nguy cơ xung đột mà v0.7 vừa cất công gỡ bỏ. Hãy chỉ viết những nguyên tắc đặc thù của nghiệp vụ bạn cần.
 
-Có thể chẩn đoán khác biệt hành vi sau nâng cấp theo trình tự sau:
+---
 
-1. Kiểm tra tool Schema đã diễn đạt ràng buộc chưa, đừng vội dán lặp vào system prompt.
-2. Kiểm tra ứng dụng có phụ thuộc các hành vi chung trong base Prompt cũ không, ví dụ chủ động xác minh, báo cáo tiến độ hoặc hỏi ít.
-3. Chỉ bổ sung các quy tắc ảnh hưởng đến kết quả nghiệp vụ, và dựng mẫu đánh giá cho chúng.
-4. Quan sát LangSmith Trace, xác nhận prompt mới không khiến model sinh thêm giải thích, lập kế hoạch hay lặp vòng.
+## 4. Todo chuyển thành tùy chọn (Opt-in): Lập kế hoạch là chiến lược, không phải phí cố định
 
-## 4. Todo chuyển thành tùy chọn: lập kế hoạch là một chiến lược, không phải phí cố định
+Trong v0.6, mọi agent tạo ra đều tự động tích hợp `TodoListMiddleware`. Mỗi lượt gọi mô hình đều phải gánh:
+* Công cụ `write_todos`
+* Kênh trạng thái (state channel) `todos`
+* Hướng dẫn prompt bắt buộc mô hình phải lập danh sách công việc trước khi làm.
 
-`create_deep_agent()` ở v0.7 không còn cài `TodoListMiddleware` mặc định. Khi không bật tường minh, ba thứ sau biến mất cùng nhau:
+Thử nghiệm của LangChain cho thấy: với các tác vụ thường ngày, việc bắt LLM lập Todo **không làm tăng độ chính xác**, nhưng lại **làm tốn thêm nhiều token và lượt gọi**. Do đó, v0.7 đã tắt Todo mặc định.
 
-- Tool `write_todos`
-- State channel `todos`
-- Prompt lập kế hoạch Todo
+### Bảng quyết định: Khi nào NÊN BẬT và khi nào NÊN TẮT Todo?
 
-Sau khi so sánh trên GPT-5.6 Terra, Claude Opus 4.8 và GLM 5.2, phía chính thức không quan sát thấy Todo mang lại mức tăng độ chính xác có ý nghĩa thống kê; Token sử dụng của hai trong ba model còn cao hơn. Vì vậy framework không còn bắt mọi lượt gọi trả phí cho lập kế hoạch tường minh.
+| Tình huống sử dụng | Khuyến nghị | Lý do |
+| :--- | :---: | :--- |
+| **Hỏi đáp 1 bước, tra cứu thông tin nhanh** | **TẮT** (Mặc định) | Kế hoạch Todo đôi khi còn dài hơn cả câu trả lời. |
+| **Task phức tạp nhiều bước, dễ quên việc** | **BẬT** | Giúp agent không bị "lạc đề" hoặc sót bước khi chuỗi hội thoại kéo dài. |
+| **Dùng model nhỏ / yếu hơn** | **BẬT** | Các model yếu cần danh sách việc cụ thể để bám sát mục tiêu. |
+| **Giao diện người dùng (UI) cần thanh tiến độ** | **BẬT** | UI cần đọc state `todos` để hiển thị checklist công việc cho người dùng xem. |
+| **Xử lý ngầm theo lô (Batch job)** | **TẮT** | Chỉ quan tâm kết quả cuối cùng, không ai xem kế hoạch Todo. |
 
-Điều này không đồng nghĩa "Todo vô dụng". Giá trị của nó tùy thuộc vào task và sản phẩm:
+### Cách bật lại Todo khi cần:
 
-| Tình huống                               | Khuyến nghị                                 | Lý do                                        |
-| ---------------------------------------- | -------------------------------------------- | -------------------------------------------- |
-| Hỏi đáp một bước, lượt gọi tool ngắn     | Giữ tắt                                      | Bản thân kế hoạch có thể còn dài hơn task    |
-| Task long-range, nhiều giai đoạn, dễ sót bước | Bật                                     | Trạng thái tường minh giúp model giữ mục tiêu qua nhiều lượt |
-| Model yếu hơn hoặc dễ mất dòng chính     | Làm đánh giá A/B trước, thường đáng thử      | Model yếu phụ thuộc scaffolding bên ngoài nhiều hơn |
-| UI cần hiển thị kế hoạch, bước hiện tại và tiến độ | Bật                             | Todo đồng thời là giao thức trạng thái sản phẩm, không chỉ là prompt cho model |
-| Batch xử lý nền, chỉ quan tâm sản phẩm cuối | Tắt mặc định, rồi quyết định bằng đánh giá | Người dùng không cần kế hoạch hiển thị; tránh chi phí cố định trước |
+Chỉ cần import `TodoListMiddleware` và truyền vào tham số `middleware`:
 
-Khi cần khôi phục, import từ LangChain Middleware:
-
-```
+```python
 from deepagents import create_deep_agent
 from langchain.agents.middleware import TodoListMiddleware
 
@@ -165,40 +157,48 @@ agent = create_deep_agent(
 )
 ```
 
-### 4.1 Chú ý phạm vi kế thừa của Todo
+### 4.1 Bẫy kế thừa Todo đối với Sub-Agent
 
-Cài đặt của v0.7 cố ý phân biệt hai loại sub-Agent:
+Cần phân biệt rõ hai loại Sub-Agent trong v0.7:
+* **Sub-Agent đa năng (`general-purpose`):** Sẽ **tự động kế thừa** Todo từ Main Agent nếu bạn có bật ở Main Agent.
+* **Sub-Agent khai báo riêng (`subagents=[...]`):** Có stack Middleware **hoàn toàn độc lập**. Nếu bạn muốn Sub-Agent này có Todo, bạn **phải khai báo riêng** trong cấu hình của nó:
 
-- Sub-Agent `general-purpose` mặc định kế thừa instance Todo mà main Agent truyền vào tường minh.
-- `subagents=[...]` kiểu khai báo (declarative) có stack Middleware độc lập, không tự kế thừa Todo của main Agent, cần bật trong spec riêng.
-
-```
+```python
 from langchain.agents.middleware import TodoListMiddleware
 
-researcher = {
+# Khai báo Sub-agent chuyên nghiên cứu, có Todo riêng:
+researcher_agent = {
     "name": "researcher",
-    "description": "Thực hiện các research task cần nhiều bước truy xuất và xác minh",
-    "system_prompt": "Hãy lập kế hoạch các bước thu thập chứng cứ trước, rồi hoàn thành từng mục và đánh dấu trạng thái.",
-    "middleware": [TodoListMiddleware()],
+    "description": "Thu thập tài liệu và nghiên cứu chuyên sâu",
+    "system_prompt": "Hãy lập kế hoạch các bước thu thập trước, đánh dấu trạng thái từng mục khi hoàn thành.",
+    "middleware": [TodoListMiddleware()],  # BẬT RIÊNG CHO SUB-AGENT NÀY
 }
 
 agent = create_deep_agent(
     model=model,
-    subagents=[researcher],
+    subagents=[researcher_agent],
 )
 ```
 
-OpenAI Codex harness profile là ngoại lệ: system prompt của nó phụ thuộc tường minh vào `write_todos`, nên profile tự động giữ Todo. Khi migration đừng chỉ đoán tập tool theo version package; hãy lấy profile thực tế và Trace làm chuẩn.
-
-Nếu Todo được dùng cho tiến độ frontend, test nâng cấp phải phủ state channel, chứ không thể chỉ xác nhận câu trả lời cuối vẫn được sinh. Chương 4 [Lập kế hoạch và phân rã task](https://datawhalechina.github.io/deepagents-in-action/chapters/ch04-task-planning/) giải thích cơ chế hoạt động của Todo; phần này quan tâm cách quyết định có trả phí cho nó sau v0.7 hay không.
 
 ## 5. Ghi đè Middleware tại chỗ: khả năng cấu hình không đồng nghĩa cấu hình tự động hợp nhất
 
-Trước đây, nếu ứng dụng truyền một `SummarizationMiddleware` tùy chỉnh vào `middleware=`, framework sẽ báo lỗi trùng tên vì nó trùng tên với instance mặc định. v0.7 đổi sang khớp theo `.name`: khi instance tùy chỉnh trùng tên với một Middleware built-in, nó thay thế instance mặc định ngay tại chỗ.
+### 5.1 Hiểu đúng bản chất: "Sơn lại cửa" vs "Thay cả cánh cửa"
 
-Điều này cho phép ứng dụng tinh chỉnh model tóm tắt, threshold kích hoạt và prompt mà không phải tháo cả Harness:
+Cụm từ *"khả năng cấu hình không đồng nghĩa cấu hình tự động hợp nhất"* (configurability ≠ auto-merge) là lời nhắc quan trọng nhất về mặt kiến trúc ở v0.7:
 
-```
+- **Trước v0.7 (v0.5, v0.6):** Nếu ứng dụng truyền một Middleware tùy chỉnh (như `SummarizationMiddleware`) vào `middleware=`, framework sẽ báo lỗi trùng tên với instance mặc định. Muốn tùy biến tham số phải tháo gỡ toàn bộ scaffolding mặc định rất phức tạp.
+- **Từ v0.7:** Framework hỗ trợ **ghi đè tại chỗ (in-place override)** dựa theo thuộc tính `.name`. Khi instance bạn truyền vào có cùng tên với một Middleware built-in, framework sẽ thay thế trực tiếp instance mặc định ngay tại vị trí đó trong pipeline.
+
+> [!WARNING]
+> **Bẫy tư duy thường gặp:** Lập trình viên thường nghĩ: *"Tôi chỉ muốn đổi ngưỡng tóm tắt từ 85% xuống 50%, nên chỉ cần truyền `SummarizationMiddleware(trigger=0.5)` là xong, còn model, backend, prompt hay permission thì framework sẽ tự động hợp nhất (merge) từ cấu hình mặc định sang."*  
+> **Thực tế:** Framework **KHÔNG** hề merge cấp trường (field-level). Đây là cơ chế **"Thay trọn gói" (Replace entire instance)**. Bất kỳ thuộc tính nào bạn không chỉ định sẽ rơi về mặc định của class hoặc `None`, làm mất toàn bộ các thiết lập ngầm mà framework đã chuẩn bị cho instance mặc định.
+
+### 5.2 Ví dụ cấu hình đúng: xem Middleware tùy chỉnh như một cấu hình hoàn chỉnh
+
+Khi muốn tinh chỉnh model tóm tắt, threshold kích hoạt và prompt mà không phải tháo Harness, bạn phải cung cấp đầy đủ thông tin:
+
+```python
 from deepagents import create_deep_agent
 from deepagents.backends import StateBackend
 from deepagents.middleware import SummarizationMiddleware
@@ -210,10 +210,10 @@ agent = create_deep_agent(
     backend=backend,
     middleware=[
         SummarizationMiddleware(
-            model=summary_model,
-            backend=backend,
-            trigger=("fraction", 0.5),
-            keep=("messages", 20),
+            model=summary_model,          # Khai báo rõ model tóm tắt
+            backend=backend,              # BẮT BUỘC: Dùng chung Backend với Agent
+            trigger=("fraction", 0.5),    # Tinh chỉnh ngưỡng kích hoạt mong muốn
+            keep=("messages", 20),        # Số tin nhắn gần nhất giữ lại
             summary_prompt=(
                 "Tóm tắt phần hội thoại trước đó, giữ nguyên đường dẫn file, "
                 "các quyết định đã chốt, việc chưa xong và nguyên nhân thất bại."
@@ -225,129 +225,146 @@ agent = create_deep_agent(
 
 Tóm tắt mặc định thường kích hoạt khi context window dùng đến khoảng 85%. Với các ứng dụng nhiều kết quả tool, hội thoại dài dễ gặp context rot, kéo sớm xuống 50% có thể ổn định hơn, nhưng tăng tần suất tóm tắt và rủi ro mất thông tin. Threshold không phải càng thấp càng tốt; cần đồng thời kiểm tra chi phí các lượt tóm tắt và tỉ lệ thành công task phía sau.
 
-### 5.1 Quy tắc ghi đè và quy tắc kế thừa
+### 5.3 Quy tắc ghi đè và quy tắc kế thừa
 
-Theo [cài đặt ghi đè Middleware](https://github.com/langchain-ai/deepagents/pull/4251), quy tắc của v0.7 là:
+Theo [cài đặt ghi đè Middleware (PR #4251)](https://github.com/langchain-ai/deepagents/pull/4251), quy tắc xử lý của v0.7 gồm:
 
-1. `.name` trùng với instance built-in: thay thế ngay tại chỗ, giữ nguyên thứ tự tương đối của stack.
-2. Không có instance mặc định cùng tên: chèn sau các Middleware lõi và trước phần đuôi profile / prompt caching / memory.
-3. Sub-Agent `general-purpose` mặc định kế thừa phần ghi đè của main Agent lên instance mặc định.
-4. Sub-Agent kiểu khai báo tự dựng stack riêng, cần cấu hình trong spec của từng cái.
-5. Một số Middleware bắt buộc nằm ở đuôi vẫn giữ thứ tự định sẵn, ví dụ logic loại trừ tool phải chạy sau khi tool được inject xong.
+1. **Trùng `.name` với instance built-in:** Thay thế ngay tại chỗ, giữ nguyên thứ tự tương đối trong stack Middleware.
+2. **Không có instance mặc định cùng tên:** Chèn sau các Middleware lõi và trước phần đuôi profile / prompt caching / memory.
+3. **Sub-Agent `general-purpose`:** Mặc định kế thừa phần ghi đè của main Agent lên instance mặc định.
+4. **Sub-Agent kiểu khai báo (`subagents=[...]`):** Tự dựng stack riêng biệt, **không** tự kế thừa ghi đè của main Agent; muốn tùy biến phải cấu hình trong spec của từng sub-Agent.
+5. **Thứ tự bắt buộc ở đuôi:** Một số Middleware bắt buộc nằm ở cuối vẫn giữ thứ tự định sẵn (ví dụ logic loại trừ tool phải chạy sau khi toàn bộ tool được inject xong).
 
-### 5.2 Bẫy dễ bị bỏ qua nhất: đây là thay thế cả instance
+### 5.4 Hai rủi ro nghiêm trọng khi ghi đè cả instance
 
-Ghi đè cùng tên không phải merge cấp trường (field-level). Sau khi truyền `FilesystemMiddleware` hay `SummarizationMiddleware` tùy chỉnh, framework sẽ không bổ từng trường Backend, mô tả tool, trạng thái permission hay tham số khởi tạo khác từ instance mặc định vào instance mới.
+Vì ghi đè là thay thế toàn bộ instance, có hai cạm bẫy thực tế bạn cần lưu ý:
 
-Vì vậy hãy tuân theo hai quy tắc:
+1. **Lệch Backend (Đọc/ghi hai không gian khác nhau):**
+   Nếu bạn tạo một `FilesystemMiddleware` hay `SummarizationMiddleware` mới mà quên truyền tham số `backend=backend` chung, Agent sẽ thao tác trên một Backend còn Middleware lại thao tác trên một Backend ngầm khác. Hậu quả là tóm tắt không đọc được dữ liệu phiên, hoặc file Agent tạo ra thì Middleware không thấy.
+2. **Thất thoát ranh giới phân quyền (`permissions`):**
+   Trong `deepagents==0.7.0`, file permission do framework inject vào `FilesystemMiddleware` mặc định qua cấu hình private. Nếu ứng dụng vừa cấu hình `permissions=` ở cấp ngoài cùng (`create_deep_agent`), vừa thay cả `FilesystemMiddleware`, các quy tắc cấm (denied rules) **không tự động hợp nhất** vào instance mới của bạn. Agent có thể vô tình xóa hoặc ghi đè file nhạy cảm. Cách an toàn là nâng cấp lên bản patch 0.7.x mới đã fix, không phụ thuộc tham số private, và luôn viết regression test với các lệnh allow/denied thực tế. Tool biến mất khỏi giao diện model không có nghĩa ranh giới permission vẫn còn hiệu lực.
 
-- Dùng chung một instance Backend, tránh main Agent và Middleware thực tế đọc/ghi hai không gian file khác nhau.
-- Xem instance thay thế như một cấu hình hoàn chỉnh để rà soát lại, đừng chỉ chú ý đúng một trường mình muốn sửa.
+## 6. File tool: Mạnh mẽ hơn, nhưng cần kiểm soát chặt chẽ Side Effect
 
-Trong `deepagents==0.7.0`, file permission do framework inject vào `FilesystemMiddleware` mặc định qua cấu hình private. Nếu ứng dụng vừa dùng `permissions=` cấp ngoài cùng (top-level), vừa thay cả file Middleware, không thể giả định các quy tắc từ chối tự động hợp nhất vào instance mới. Cách an toàn hơn là nâng cấp lên bản patch 0.7.x mới đã được kiểm chứng, tránh phụ thuộc tham số private, và làm regression test bằng các lượt gọi allow/denied thật. Tool biến mất khỏi giao diện model không có nghĩa ranh giới permission vẫn còn hiệu lực.
+Trong Deep Agents, hệ thống tệp tin (Filesystem) đóng vai trò như **bộ nhớ dài hạn và không gian làm việc** của Agent. Phiên bản v0.7 mang lại bước nhảy vọt về hiệu năng khi xử lý các repository lớn, nhưng đồng thời cũng gỡ bỏ một số rào chắn bảo vệ ngầm trước đây.
 
-## 6. File tool: hiệu quả hơn, nhưng cũng càng cần rà soát lại side effect
+### Tổng hợp 7 thay đổi quan trọng của File Tool:
 
-Filesystem là tầng quản lý ngữ cảnh của Deep Agents. v0.7 vừa bổ sung năng lực, vừa đặt ranh giới cho tìm kiếm thư mục lớn.
+| Công cụ / Tính năng | Hành vi cũ (v0.6) | Hành vi mới (v0.7) | Tác động thực tế lên ứng dụng |
+| :--- | :--- | :--- | :--- |
+| **`write_file`** | Báo lỗi nếu file đã tồn tại | **Ghi đè toàn bộ ngay lập tức** | Mất cơ chế chống ghi đè nhầm; agent có thể xóa trắng nội dung file cũ. |
+| **`delete`** | Không có sẵn trong tool mặc định | **Được bật sẵn mặc định** (xóa file hoặc thư mục đệ quy) | Tăng nguy cơ bị xóa nhầm dữ liệu quan trọng nếu không phân quyền. |
+| **Phân trang `read_file`** | Chỉ trả về nội dung text thô | Trả về kèm metadata: **dải dòng, tổng số dòng, số dòng còn lại, `offset` tiếp theo** | Agent biết rõ vị trí của mình trong file lớn, không còn đọc lặp mù quáng. |
+| **Timeout `grep` / `glob`** | Treo, timeout hoặc vứt bỏ toàn bộ kết quả | Trả về các kết quả đã tìm được kèm cờ `truncated=True` | Agent vẫn nhận được dữ liệu tìm được ban đầu thay vì nhận lỗi trắng tay. |
+| **Giới hạn số match `grep`** | Không giới hạn (dễ tràn bộ nhớ) | **Mặc định tối đa 1.000 matches**, hỗ trợ streaming `rg` | Tránh làm phình context window khi tìm kiếm các từ khóa phổ biến trong repo lớn. |
+| **Kết quả `ls` / `glob` rỗng** | Trả về chuỗi `"[]"` | Trả về văn bản `"No files found"` | **Làm hỏng** các hàm code tự parse chuỗi `"[]"` cũ. |
+| **Định dạng số dòng `read_file`** | Sau số dòng là ký tự Tab (`\t`) | Sau số dòng là **hai dấu cách** | **Làm hỏng** các hàm parser dùng `split("\t")`. |
 
-| Thay đổi                | Hành vi v0.7                                        | Tác động lên ứng dụng hiện có                |
-| ----------------------- | --------------------------------------------------- | -------------------------------------------- |
-| `write_file`            | Khi đích đã tồn tại thì ghi đè toàn bộ ngay        | Logic bảo vệ cũ kiểu "đã tồn tại thì báo lỗi" sẽ mất tác dụng |
-| `delete`                | Gia nhập file tool mặc định, xóa được file hoặc xóa thư mục đệ quy | Mặt tool thêm side effect rủi ro cao, cần permission, phê duyệt hoặc allowlist |
-| Phân trang `read_file`  | Trả về tổng số dòng, số dòng còn lại và `offset` tiếp theo | Agent nhảy thẳng tới trang sau hoặc cuối file, giảm đọc lặp mù quáng |
-| `grep` / `glob` timeout | Trả về các kết quả hợp lệ đã tìm được và đánh dấu `truncated` | "Thành công" có thể chỉ là thành công một phần; bên gọi phải giữ semantics không đầy đủ |
-| Số match của `grep`     | Tool Agent mặc định tối đa 1.000 match và tiêu thụ streaming output `rg` local | Tránh chiếm vô hạn memory và context ở repo lớn; query rộng cần chủ động thu hẹp |
-| `ls` / `glob` rỗng      | Text thành `No files found`, không còn là `[]`      | Code parse raw output cần sửa lại            |
-| Cột số dòng `read_file` | Sau số dòng dùng hai dấu cách, không còn độ rộng cố định cộng Tab | Parser cắt theo Tab hoặc mô phỏng `cat -n` sẽ hỏng |
+---
 
-### 6.1 Trách nhiệm giữa ghi đè và chỉnh sửa chính xác rõ ràng hơn
+### 6.1 Ghi đè toàn bộ (`write_file`) vs Chỉnh sửa một phần (`edit_file`)
 
-Semantics khuyến nghị hiện nay:
+Quy tắc chuẩn khi làm việc với file trong v0.7:
+* **Ghi mới hoặc viết lại toàn bộ file:** Dùng `write_file`.
+* **Chỉ sửa vài dòng code / vài câu văn:** Đọc trước bằng `read_file`, sau đó dùng `edit_file` để thay thế chuỗi chính xác (`old_string` -> `new_string`).
 
-- Viết lại toàn bộ file: dùng `write_file`
-- Chỉ sửa một phần: `read_file` trước, rồi dùng `edit_file` để thay thế chuỗi chính xác
+> [!WARNING]
+> **Mất rào chắn chống ghi đè nhầm:**  
+> Ở v0.6, nếu agent vô tình gọi `write_file` lên một file đã có, hệ thống sẽ chặn lại và báo lỗi. Ở v0.7, file đó sẽ bị **ghi đè và mất sạch nội dung cũ**.  
+> Đối với các file nhạy cảm (như `.env`, config, mã nguồn quan trọng), bạn **không được ỷ lại vào framework**, mà bắt buộc phải dùng rào chắn phân quyền (`FilesystemPermission`), chế độ con người duyệt (Human-in-the-loop - HITL) hoặc cấu hình chế độ chỉ đọc.
 
-Cách này tránh việc gửi cả file cũ về lại model làm `edit_file.old_string` chỉ để viết lại toàn bộ, giảm Token không cần thiết. Nhưng nó cũng gỡ bỏ một lớp bảo vệ chống ghi đè nhầm. Với các đường dẫn nhạy cảm như cấu hình, credentials, script production, đừng dựa vào hành vi báo lỗi cũ; hãy dùng tường minh `FilesystemPermission`, HITL hoặc bộ tool chỉ đọc.
+---
 
-### 6.2 `delete` là thao tác ghi, và xóa thư mục kiểu tất cả hoặc không
+### 6.2 Tool `delete`: Cơ chế "Tất cả hoặc không" và cách khóa bằng Allowlist
 
-Backend hỗ trợ xóa sẽ expose `delete` cho Agent. Khi xóa thư mục đệ quy, tầng permission kiểm tra đích và toàn bộ đường dẫn con cháu: chỉ cần một đường dẫn bất kỳ trúng quy tắc từ chối, cả thao tác xóa không được thực hiện, thay vì để lại một cây thư mục xóa dở. Symlink chỉ xóa chính link, không đi theo đến đích.
+`delete` đã được đưa vào danh sách tool mặc định của agent, hỗ trợ xóa file đơn lẻ hoặc xóa cả cây thư mục đệ quy (recursive).
 
-Nếu ứng dụng không cần xóa, theo nguyên tắc least privilege thì đừng expose nó:
+* **Cơ chế an toàn "Tất cả hoặc không" (All-or-nothing):** Khi agent yêu cầu xóa một thư mục, hệ thống sẽ kiểm tra quyền hạn của thư mục đó và **toàn bộ các file con bên trong**. Chỉ cần có 1 file con nằm trong danh sách cấm xóa, **toàn bộ thao tác xóa sẽ bị hủy bỏ**, tránh tình trạng thư mục bị xóa dở dang.
+* **Nguyên tắc đặc quyền tối thiểu (Least Privilege):** Nếu ứng dụng của bạn không cần cho phép Agent xóa file, hãy chủ động tắt tool này bằng **Tool Allowlist**:
 
-```
+```python
 from deepagents import create_deep_agent
 from deepagents.backends import StateBackend
 from deepagents.middleware import FilesystemMiddleware
 
 backend = StateBackend()
 
+# CHỈ CHO PHÉP 4 TOOL AN TOÀN, LOẠI BỎ WRITE_FILE VÀ DELETE:
 agent = create_deep_agent(
     model=model,
     backend=backend,
     middleware=[
         FilesystemMiddleware(
             backend=backend,
-            tools=["read_file", "ls", "glob", "grep"],
+            tools=["read_file", "ls", "glob", "grep"],  # Danh sách cho phép
         )
     ],
 )
 ```
 
-Allowlist này chỉ kiểm soát tám file tool built-in, không xóa các tool tùy chỉnh của ứng dụng. `read_file` là năng lực bắt buộc của `FilesystemMiddleware`, không thể loại khỏi danh sách; `execute` và `delete` vẫn tiếp tục bị giới hạn bởi năng lực Backend — allowlist chỉ thu hẹp được, không thể biến ra năng lực Backend không hỗ trợ.
+> [!TIP]
+> `read_file` là công cụ cốt lõi bắt buộc của `FilesystemMiddleware` và không thể bị loại bỏ. Các tool bị loại bỏ khỏi danh sách `tools=[...]` sẽ được gỡ hoàn toàn khỏi hệ thống đăng ký tool (`ToolNode`), đảm bảo mô hình không thể gọi lén.
 
-Các bản sửa sau của v0.7 còn bảo đảm tool bị loại sẽ được gỡ khỏi registry `ToolNode`, chứ không chỉ ẩn với model. Phần ghi đè cùng tên của main Agent sẽ truyền cho sub-Agent `general-purpose` mặc định; sub-Agent kiểu khai báo vẫn phải giới hạn riêng.
+---
 
-Tool allowlist giải quyết "model có thể gọi những tool built-in nào", không phải toàn bộ kiểm soát truy cập file. Ranh giới của quy tắc cấp đường dẫn, Shell, tool tùy chỉnh và MCP xem tại [Chương 11: Filesystem permission](https://datawhalechina.github.io/deepagents-in-action/chapters/ch11-filesystem-permissions/).
+### 6.3 Tìm kiếm thư mục lớn: Cạm bẫy `truncated=True`
 
-### 6.3 Kết quả tìm kiếm một phần không phải là lỗi, nhưng cũng không phải tập đầy đủ
+Khi tìm kiếm (`grep` hoặc `glob`) trên các repository lớn, nếu gặp timeout hoặc vượt quá 1.000 kết quả, tool sẽ trả về các kết quả tìm được kèm thuộc tính `truncated=True`.
 
-Trước đây `grep` / `glob` trên thư mục lớn có thể timeout, treo, hoặc vứt mất các match đã tìm được. v0.7 trả về các match hiện có, dùng `truncated=True` biểu thị kết quả chưa đầy đủ. Với tool Agent-facing, kết quả một phần sau timeout có thể là `ToolMessage` thành công, và model nhận gợi ý "thu hẹp đường dẫn hoặc pattern".
+> [!IMPORTANT]
+> **"Không có lỗi" không đồng nghĩa với "Đã tìm thấy hết"!**  
+> Khi code backend của bạn tiêu thụ trực tiếp kết quả tìm kiếm, phải luôn kiểm tra cờ `truncated`:
 
-Ứng dụng tiêu thụ trực tiếp kết quả Backend cần phân biệt rõ:
-
-```
+```python
 result = backend.grep("TODO", path="/workspace")
 
 if result.error:
     raise RuntimeError(result.error)
 
+# Xử lý các kết quả tìm được
 for match in result.matches or []:
-    consume(match)
+    process_match(match)
 
+# CẢNH BÁO: Nếu bị cắt cụt, cần thu hẹp phạm vi tìm kiếm tiếp
 if result.truncated:
+    print("Cảnh báo: Kết quả tìm kiếm chưa đầy đủ do vượt quá giới hạn!")
     schedule_narrower_search()
 ```
 
-Không thể suy từ "không có exception" rằng tìm kiếm đã đầy đủ, cũng không được vì `truncated=True` mà vứt các match hợp lệ đã trả về. `CompositeBackend` sẽ lan truyền `truncated=True` khi bất kỳ kết quả routing nào chưa đầy đủ.
+---
 
-Giới hạn 1.000 match của `grep` là default hướng model của `FilesystemMiddleware`, model có thể điều chỉnh qua `max_count`; khi gọi trực tiếp Backend, mặc định vẫn là không giới hạn. `context_lines` ở v0.7.0 ban đầu chỉ có trong interface gọi trực tiếp của `FilesystemBackend.grep()` local, và không đồng thời trở thành tham số thống nhất cho mọi Backend và tool của model. Đừng thấy changelog ghi "context lines tùy chọn" mà coi mọi `grep` Agent-facing đều hỗ trợ cùng một Schema.
+### 6.4 Phân trang `read_file`: Agent không còn phải đoán mò
 
-### 6.4 Metadata phân trang tối ưu trace, không chỉ là định dạng output
+Khi đọc file lớn bằng `read_file(offset=..., limit=...)`, v0.7 sẽ đính kèm thông tin phân trang ở cuối nội dung:
+* Dải dòng vừa đọc (ví dụ: dòng 1 đến 100)
+* Tổng số dòng của file (ví dụ: 301 dòng)
+* Số dòng còn lại chưa đọc (201 dòng)
+* Vị trí `offset` tiếp theo để đọc tiếp (101)
 
-Với `read_file(offset=..., limit=...)`, khi không có metadata phân trang, model phải đoán file còn nội dung không và trang sau bắt đầu từ đâu. Phần đuôi của v0.7 báo dải dòng đã đọc, tổng số dòng, số dòng còn lại và `offset` tiếp theo.
+Nhờ metadata này, LLM biết chính xác khi nào đã đọc hết file và biết nhảy thẳng tới trang tiếp theo, giúp giảm đáng kể số lượt đọc lặp lại và tiết kiệm token gọi tool.
 
-Trong đánh giá chính thức trên file 301 dòng, cả hai model đều giảm ổn định số lần đọc xuống hai và nhảy thẳng tới cuối file. Thay đổi loại này giải thích vì sao tối ưu Harness không thể chỉ nhìn Prompt Token: phản hồi tool tốt hơn thay đổi cả trace gọi.
+---
 
-## 7. v0.6 → v0.7: các thay đổi tương thích có thể chặn nâng cấp
+## 7. v0.6 → v0.7: Các thay đổi tương thích có thể làm sập ứng dụng (Breaking Changes)
 
-Todo là breaking change rõ nhất, nhưng không phải duy nhất. Tầng tương thích Backend và parse raw output dễ bộc lộ vấn đề hơn sau khi đã lên production.
+Ngoài Todo và Middleware, còn có những thay đổi sâu dưới tầng Backend và dữ liệu mà bạn cần rà soát trước khi triển khai:
 
-### 7.1 Backend Factory bị gỡ bỏ
+### 7.1 Gỡ bỏ hoàn toàn Backend Factory
 
-Backend Factory đã deprecated từ v0.5 nay chính thức bị xóa ở v0.7. `create_deep_agent()` giờ nhận instance `BackendProtocol` cụ thể, thay vì callable tạo Backend theo runtime.
+Trước đây (v0.5, v0.6), bạn có thể truyền một hàm callable (factory) vào tham số `backend`:
 
-```
-# v0.6.x: cách viết tương thích cũ
+```python
+# CÁCH VIẾT CŨ TRƯỚC ĐÂY (SẼ BÁO LỖI Ở v0.7):
 agent = create_deep_agent(
     backend=lambda runtime: StoreBackend(),
     store=store,
 )
 ```
 
-Nên migration sang instance tường minh, và cấu hình namespace cho `StoreBackend`:
+Ở v0.7, cách viết này đã bị xóa bỏ. Bạn phải **khởi tạo instance cụ thể** trước khi truyền vào:
 
-```
+```python
+# CÁCH VIẾT CHUẨN TRÊN v0.7:
 from deepagents import create_deep_agent
 from deepagents.backends import StoreBackend
 
@@ -362,129 +379,115 @@ agent = create_deep_agent(
 )
 ```
 
-Thay đổi này không chỉ là siết kiểu (type). assistant-id namespace fallback ngầm trước đây bị gỡ; ứng dụng phải làm rõ file thuộc user, tenant hay phạm vi nghiệp vụ nào. Thiết kế namespace sai có thể dẫn tới đọc chéo user; đừng nhét đại một hằng số chỉ để pass type check.
+> [!CAUTION]
+> **Cảnh báo an toàn dữ liệu nhiều người dùng (Multi-tenant):**  
+> Trong v0.6 có cơ chế tự động fallback namespace theo `assistant-id`. Ở v0.7, cơ chế ngầm này đã bị gỡ bỏ. Bạn bắt buộc phải cấu hình `namespace` rõ ràng theo ID người dùng hoặc ID tổ chức (`user.identity`). Nếu cấu hình sai hoặc hardcode cố định, **User A có thể đọc nhầm file của User B!**
 
-Đồng thời cần xử lý các mục tương thích sau:
+**Các hàm và hằng số cũ đã bị xóa bỏ hoàn toàn:**
+* Xóa các lớp/hằng: `BackendFactory`, `BACKEND_TYPES`, `FileFormat`, `Unset`.
+* Xóa tham số runtime trong constructor: `StateBackend(runtime=...)`, `StoreBackend(runtime=...)`.
+* Chuyển các hàm cũ `ls_info`, `glob_info`, `grep_raw` sang các API chuẩn mới: `ls`, `glob`, `grep`, `ReadResult`.
+* Xóa tham số `SummarizationMiddleware(history_path_prefix=...)`.
 
-- Xóa usage của `BackendFactory`, `BACKEND_TYPES`, `FileFormat` và `Unset`
-- Xóa tham số cũ `StateBackend(runtime=...)`, `StoreBackend(runtime=...)`
-- Migration `ls_info`, `glob_info`, `grep_raw` và interface `read()` thuần chuỗi cũ
-- Dùng API `ls` / `glob` / `grep` / `ReadResult` hiện tại
-- Xóa `SummarizationMiddleware(history_path_prefix=...)`; việc offload lịch sử đổi sang dùng Backend đã cấu hình
-- Nắm rõ `FilesystemBackend` và `LocalShellBackend` mặc định `virtual_mode=True`
+---
 
-`FileData.content` của file mới dùng string. `list[str]` do version cũ persist vẫn đọc được, và sẽ được chuyển đổi ở lần ghi đè hoặc chỉnh sửa kế tiếp, nên không cần viết lại toàn bộ file sẵn có một lần chỉ vì nâng cấp; nhưng serializer và Backend tùy chỉnh nên chấp nhận đồng thời dữ liệu thời kỳ migration.
+### 7.2 Rà soát lại các đoạn code tự bóc tách text thô (Raw text parsing)
 
-### 7.2 Parser output tool thô phải được rà riêng
+Nếu ứng dụng của bạn có những đoạn code Python tự động phân tích kết quả trả về của tool (`ToolMessage.content`), bạn cần đặc biệt chú ý:
 
-Nếu ứng dụng chỉ trả kết quả tool về lại model, thay đổi format thường do model tự thích nghi. Nếu ứng dụng tự parse `ToolMessage.content`, các cách viết sau đều đáng kiểm tra:
+1. **So sánh thư mục rỗng:** Trước đây trả về `[]`, nay trả về `"No files found"`.
+2. **Cắt dòng bằng Tab:** Trước đây `read_file` dùng `\t` sau số dòng, nay dùng **hai dấu cách** (`  `). Nếu dùng `line.split("\t")` code sẽ lỗi.
+3. **Giả định `write_file` báo lỗi:** Code cũ nếu bắt ngoại lệ `FileExistsError` để biết file đã tồn tại thì nay logic đó sẽ không bao giờ được kích hoạt.
 
-- So kết quả thư mục rỗng với chuỗi `"[]"`
-- Chạy `split("\t", 1)` cho từng dòng `read_file`
-- Giả định số dòng luôn chiếm độ rộng cố định
-- Coi `ToolMessage.status == "success"` là tìm kiếm đã đầy đủ
-- Giả định `write_file` chắc chắn thất bại khi file đã tồn tại
+> [!TIP]
+> **Khuyến nghị thiết kế:** Nếu cần xử lý dữ liệu bằng code Python, hãy gọi trực tiếp các phương thức của `Backend` để nhận object có cấu trúc, không nên parse chuỗi text dành riêng cho LLM đọc.
 
-Với logic tiêu thụ bằng máy, ưu tiên kết quả có cấu trúc của Backend; đừng coi format text dành cho model đọc là một giao thức ổn định.
+---
 
-### 7.3 Quét tĩnh trước, rồi chạy test migration thật
+### 7.3 Hướng dẫn quét tĩnh code cũ trong dự án
 
-Có thể bắt đầu từ vài nhóm tìm kiếm sau:
+Trước khi chạy test, bạn có thể dùng lệnh `rg` (ripgrep) trên terminal để tìm nhanh các vết tích của phiên bản cũ trong source code:
 
-```
+```bash
+# 1. Tìm các class/hàm cũ đã bị khai tử:
 rg -n 'BackendFactory|BACKEND_TYPES|FileFormat|Unset|history_path_prefix' .
+
+# 2. Tìm các method Backend cũ:
 rg -n 'ls_info|glob_info|grep_raw' .
+
+# 3. Tìm các hàm factory dạng lambda:
 rg -n 'backend\s*=\s*(lambda|[A-Za-z_][A-Za-z0-9_]*_factory)' .
+
+# 4. Tìm các logic parse text thô có nguy cơ gãy:
 rg -n 'split\("\\t"|cat -n|No files found|write_file' .
 ```
 
-Kết quả tìm kiếm không phải bằng chứng migration hoàn tất. Nó chỉ tìm ra các symbol cũ phổ biến, không tìm được dependency ngầm của code nghiệp vụ vào Todo state, sự tồn tại của tool hay semantics lỗi.
+---
 
-## 8. Hai nhóm năng lực "quan tâm theo nhu cầu"
+## 8. Hai tính năng mở rộng theo nhu cầu hạ tầng
 
-Các cập nhật dưới đây có giá trị, nhưng không nên chiếm hết sự chú ý migration của mọi độc giả.
+Đây là 2 tính năng tối ưu hóa chuyên sâu, chỉ cần quan tâm nếu dự án của bạn sử dụng dịch vụ tương ứng:
 
-### 8.1 Prompt Caching cấp Provider
+### 8.1 Prompt Caching cấp Cloud Provider
+* **AWS Bedrock:** Hỗ trợ tính năng Prompt Caching thông qua gói mở rộng `deepagents[aws]`.
+* **Fireworks AI:** Khi cài package `langchain-fireworks` tương thích, framework tự động kích hoạt tính năng duy trì session cache (`session affinity`) cho cả main agent và sub-agent, giúp giảm đáng kể chi phí token khi hội thoại dài.
 
-- Người dùng AWS Bedrock có thể dùng hỗ trợ Prompt caching qua `deepagents[aws]`.
-- Khi cài version tương thích của `langchain-fireworks`, Deep Agents tự động thêm Fireworks prompt-cache session affinity cho main Agent và sub-Agent.
+### 8.2 NVIDIA Nemotron 3 Ultra Profile
+v0.7 cung cấp sẵn cấu hình Harness chuẩn cho mô hình Nemotron 3 Ultra (trên nền tảng NVIDIA NIM, Fireworks, OpenRouter, Together...). Profile này tự động sửa các lỗi format khi model gọi tool, ngăn chặn vòng lặp vô hạn và bảo vệ kết quả trả về cuối cùng.
 
-Chúng tối ưu việc tái sử dụng cache của provider cụ thể, không thay đổi cách gọi chung cho mọi model. Khi nghiệm thu, hãy kiểm tra Token đọc/ghi cache, session / thread affinity và hóa đơn thật, thay vì chỉ xác nhận Middleware đã load.
+---
 
-### 8.2 NVIDIA Nemotron 3 Ultra Harness Profile
+## 9. Quy trình 7 bước nâng cấp an toàn từ v0.5/0.6 lên v0.7
 
-v0.7 cung cấp Harness profile built-in cho Nemotron 3 Ultra, phủ các điểm vào như NVIDIA / ChatNVIDIA, Baseten, Fireworks, OpenRouter, Nebius và Together, kèm fix tương thích tool call, kiểm soát vòng lặp, bảo vệ final answer và đánh dấu NIM app-origin.
+Để việc migration diễn ra suôn sẻ, không làm gián đoạn hệ thống production, hãy thực hiện theo đúng 7 bước sau:
 
-Loại cài đặt này đặt các khác biệt riêng của model vào Harness profile; quy tắc nghiệp vụ vẫn giữ tại chỗ gọi của ứng dụng. Nếu không dùng Nemotron, phần này không chặn nâng cấp; nếu dùng, cần chú ý thêm các vòng sửa lỗi có thể tăng do profile, và Trace sau khi tool call sai được tự động sửa.
+```mermaid
+flowchart TD
+    B1["Bước 1: Đo Baseline cũ (v0.6)"] --> B2["Bước 2: Cài v0.7 trong môi trường test"]
+    B2 --> B3["Bước 3: Sửa các lỗi API bị xóa"]
+    B3 --> B4["Bước 4: Cấu hình tường minh Todo & Middleware"]
+    B4 --> B5["Bước 5: Sửa các bộ parser text thô"]
+    B5 --> B6["Bước 6: So sánh Trace trên LangSmith"]
+    B6 --> B7["Bước 7: Canary Release & Theo dõi"]
+```
 
-## 9. Nâng cấp từ baseline 0.5/0.6 của khóa học lên 0.7
+* **Bước 1: Đo Baseline cũ (v0.6):** Chọn từ 3 - 5 bài test thực tế đại diện cho sản phẩm của bạn (task ngắn, task dài, task đọc file lớn...). Ghi lại số token, số lần gọi model, số lần gọi tool, thời gian phản hồi và chi phí.
+* **Bước 2: Cài đặt v0.7 trong môi trường cô lập:** Dùng lệnh `uv add --upgrade "deepagents>=0.7,<0.8"` trên branch phát triển riêng biệt.
+* **Bước 3: Sửa các lỗi cú pháp/API trực tiếp:** Thay thế `BackendFactory`, cấu hình tường minh `namespace` cho `StoreBackend`, xóa các tham số deprecated.
+* **Bước 4: Tường minh hóa các chính sách mặc định:**
+  * Ứng dụng có cần Todo không? (Nếu cần thanh tiến độ UI hoặc task phức tạp -> bật `TodoListMiddleware`).
+  * Có cần chỉnh ngưỡng tóm tắt không? (Nếu cần -> ghi đè `SummarizationMiddleware` đầy đủ tham số).
+  * Kiểm tra quyền hạn file (`delete`, `write_file`).
+* **Bước 5: Viết lại test cho các bộ parser:** Đảm bảo test case bao phủ thư mục rỗng, file phân trang, kết quả tìm kiếm bị cắt cụt.
+* **Bước 6: So sánh Trace trên LangSmith:** Chạy cùng một tập dữ liệu test và quan sát bảng tín hiệu:
 
-Nếu bạn đã chạy thông các ví dụ đầu khóa học, không cần làm lại từ đầu. Giữ nguyên task, input và Trace cũ làm nhóm đối chứng, rồi nâng cấp theo bảy bước dưới đây; chính các kết quả cũ này giúp bạn phán đoán v0.7 giảm chi phí cố định hay thay đổi hành vi thật.
+| Hiện tượng quan sát | Nguyên nhân khả dĩ | Hành động xử lý |
+| :--- | :--- | :--- |
+| **Token lượt đầu không giảm** | Prompt riêng của bạn hoặc mô tả tool quá dài | Rà soát lại system prompt, lược bớt các câu văn mẫu không cần thiết |
+| **Số lượt model gọi lại tăng vọt** | Thiếu Todo hoặc prompt mô tả tool quá ngắn khiến LLM mò mẫm | Bật lại `TodoListMiddleware` hoặc bổ sung vài chỉ dẫn vào system prompt |
+| **Mất checklist Todo trên giao diện UI** | Todo đã bị tắt mặc định | Thêm `TodoListMiddleware()` vào tham số `middleware` |
+| **Hội thoại dài bị mất trí nhớ hoặc tóm tắt quá muộn** | Ngưỡng tóm tắt 85% mặc định chưa phù hợp | Ghi đè `SummarizationMiddleware` với ngưỡng `trigger=("fraction", 0.5)` |
+| **Xuất hiện file bị ghi đè hoặc xóa mất** | Chưa giới hạn quyền hoặc chưa bật Allowlist | Cấu hình lại `FilesystemMiddleware(tools=[...])` hoặc thêm quyền kiểm soát đường dẫn |
 
-### Bước 1: Ghi lại baseline v0.6
+* **Bước 7: Canary Release (Tăng dần traffic thực tế):** Chuyển 10% traffic người dùng sang phiên bản v0.7, theo dõi tỷ lệ thành công trước khi chuyển đổi toàn bộ hệ thống.
 
-Chọn task đại diện cho phân bố production, tối thiểu phủ:
+---
 
-- Một task hỏi đáp ngắn hoặc dùng một tool
-- Một task long-range nhiều bước
-- Một task có gọi sub-Agent
-- Một task đọc phân trang file lớn hoặc tìm kiếm thư mục lớn
-- Một task bị từ chối quyền hoặc cần phê duyệt thủ công (HITL)
+## 10. Bảng tra cứu quyết định nhanh (Cheat-Sheet)
 
-Lưu tỉ lệ thành công, input / output Token, số lượt model, số lượt gọi tool, số sub-Agent, độ trễ và chi phí.
+| Đặc điểm ứng dụng của bạn | Khuyến nghị hành động khi lên v0.7 |
+| :--- | :--- |
+| **Chatbot hỏi đáp nhanh, tác vụ 1 bước, không có UI tiến độ** | Giữ Todo **TẮT** mặc định; tận hưởng việc tiết kiệm ~65% token nền. |
+| **Tác vụ phức tạp nhiều bước, repo lớn, hoặc UI có checklist tiến độ** | Chủ động **BẬT** `TodoListMiddleware()` tường minh. |
+| **Hội thoại dài nhiều lượt, cần tóm tắt tin nhắn** | Ghi đè `SummarizationMiddleware` cùng tên; nhớ **truyền đầy đủ các trường** và dùng chung `backend`. |
+| **Code có đọc trực tiếp kết quả file tool** | Rà soát lại logic parse chuỗi text; chuyển sang dùng API có cấu trúc của Backend. |
+| **Làm việc trực tiếp trên hệ thống tệp tin thật** | Kiểm tra quyền hạn `delete` và `write_file`; dùng **Allowlist** để khóa các thao tác nguy hiểm. |
+| **Ứng dụng nhiều người dùng (Multi-tenant)** | Bỏ Backend Factory; thiết kế `namespace` rõ ràng theo User/Tenant ID để tránh lộ dữ liệu chéo. |
+| **Dùng cloud AWS Bedrock hoặc Fireworks** | Kích hoạt Prompt Caching chuyên dụng để tối ưu hóa thêm chi phí. |
 
-### Bước 2: Nâng cấp lên 0.7.x hiện tại trong môi trường cách ly
+> [!NOTE]
+> **Triết lý đọng lại của v0.7:** Khung mặc định siêu nhẹ, giao diện Tool rõ ràng, ứng dụng tự chọn chiến lược, và đánh giá thực tế quyết định thành công. Khi mô hình LLM ngày càng thông minh hơn, sự phân định rạch ròi này sẽ giúp hệ sinh thái Agent của bạn bền vững và dễ bảo trì hơn rất nhiều.
 
-Dùng `deepagents>=0.7,<0.8` để lấy bản patch hiện tại và khóa snapshot dependency của dự án; chỉ khi điều tra một hành vi phát hành ban đầu nào đó mới dùng `==0.7.0` tái hiện riêng. Đừng để "nâng cấp Deep Agents" trộn lẫn với "đồng thời nâng cấp model, prompt và tool nghiệp vụ" trong cùng một đợt thay đổi.
-
-### Bước 3: Migration các API sẽ báo lỗi trực tiếp
-
-Xử lý Backend factory, Store namespace tường minh, các symbol bị gỡ, `history_path_prefix` và method Backend cũ. Mục tiêu giai đoạn này là để ứng dụng khởi tạo và gọi cơ bản được.
-
-### Bước 4: Tường minh hóa từng chính sách mặc định vốn phụ thuộc trước đây
-
-Làm rõ:
-
-- Có cần Todo không? Main Agent và từng sub-Agent khai báo có nhất quán không?
-- System prompt tùy chỉnh có thiếu các hành vi nghiệp vụ then chốt mà lớp mặc định cũ từng cung cấp không?
-- Có cần ghi đè model, threshold hay prompt của Summarization không?
-- `delete` và ghi đè có phù hợp với mô hình permission không?
-- File tool có nên thu hẹp bằng allowlist không?
-
-### Bước 5: Viết lại test parse raw output
-
-Thêm các mẫu: thư mục rỗng, file thụt đầu bằng Tab, file phân trang, tìm kiếm bị cắt cụt, ghi đè file đã tồn tại, từ chối xóa đệ quy. Test riêng kết quả Backend có cấu trúc và text Agent-facing; đừng trộn thành một giao thức.
-
-### Bước 6: So sánh cùng task trong LangSmith
-
-So sánh từng Trace v0.6 và v0.7:
-
-| Quan sát                   | Tín hiệu bất thường                     | Hành động khả dĩ                                        |
-| -------------------------- | ---------------------------------------- | -------------------------------------------------------- |
-| Input tokens lượt đầu      | Không giảm rõ rệt                        | Kiểm tra xem Prompt ứng dụng, Skills, Memory hay mô tả tool có đang chiếm phần chủ đạo |
-| Số lượt model              | Tăng rõ rệt                              | Kiểm tra việc gỡ Todo, mô tả tool quá ngắn hoặc model vào vòng lặp |
-| `write_todos` / `todos`    | UI phụ thuộc nhưng đã biến mất           | Khôi phục tường minh `TodoListMiddleware`                 |
-| Điểm kích hoạt Summarization | Quá muộn gây context rot, hoặc quá sớm mất thông tin | Dùng ghi đè cùng tên để chỉnh `trigger`, `keep` và prompt tóm tắt |
-| Tìm kiếm file              | Vẫn kết luận thẳng sau `truncated`       | Dẫn model thu hẹp đường dẫn, hoặc để bên gọi tiếp tục tìm theo mảnh |
-| Side effect file           | Xuất hiện ghi đè hoặc xóa ngoài ý muốn   | Thu hẹp tool, tăng cường permission đường dẫn hoặc thêm HITL |
-
-### Bước 7: Tăng dần traffic, để nghiệm thu nghiệp vụ quyết định có tiếp tục hay không
-
-Trước hết cho một phần traffic vào v0.7, so sánh tỉ lệ thành công và chi phí của cùng loại task. Token nền giảm là tín hiệu tốt, nhưng chỉ khi kết quả nghiệp vụ ổn định và trace không phình bất thường thì migration mới thực sự hoàn tất.
-
-## 10. Bảng quyết định cuối cùng
-
-| Nếu ứng dụng của bạn…                          | Hành động khuyến nghị của v0.7                      |
-| ---------------------------------------------- | ----------------------------------------------------- |
-| Chỉ làm task ngắn, không có UI tiến độ         | Giữ Todo tắt, tận hưởng lớp mặc định nhẹ hơn         |
-| Chạy task long-range hoặc model yếu hơn        | Bật Todo tường minh, và xác minh lợi ích bằng đánh giá nghiệp vụ |
-| Dùng tóm tắt hội thoại                         | Chỉnh threshold bằng `SummarizationMiddleware` cùng tên, nhưng xem nó là cấu hình của instance hoàn chỉnh |
-| Parse raw text của file tool                   | Liệt kê migration output format là blocker, ưu tiên chuyển sang kết quả có cấu trúc |
-| Expose filesystem thật                         | Rà soát `delete`, ghi đè, allowlist, permission đường dẫn và HITL |
-| Dùng StoreBackend                              | Gỡ factory, thiết kế namespace tường minh, và test cô lập tenant |
-| Phụ thuộc cache của Provider hoặc Nemotron     | Xác minh Trace và hóa đơn của profile / integration tương ứng, đừng coi là lợi ích phổ quát |
-
-Giá trị thực dụng của v0.7 nằm ở việc vạch lại ranh giới: lớp mặc định giữ nhẹ, interface tool diễn đạt năng lực, ứng dụng chọn chiến lược, đánh giá kiểm tra kết quả. Khi model và task tiếp tục thay đổi, sự phân công này dễ bảo trì hơn một system prompt chung không ngừng phình to.
 
 ## Tài liệu tham khảo
 
