@@ -2,8 +2,7 @@
 
 > Bộ tutorial 9 phase hướng dẫn bạn tự xây dựng một coding agent hoàn chỉnh,
 > ứng dụng kiến thức từ khóa học Deep Agents (LangChain ecosystem).
->
-> **Format**: Concept-only — chỉ giải thích concept + chỉ đến tài liệu, bạn tự code hoàn toàn.
+> **Đặc điểm**: Đầy đủ lý thuyết chuyên sâu, mã nguồn mẫu chi tiết từng bước, kịch bản thực chiến thực tế, và liên kết tham khảo mở rộng.
 
 ## Yêu cầu
 

@@ -1,70 +1,290 @@
 # Phase 2: File Operations — Đọc, ghi, tìm kiếm code
-> **Prerequisite**: Phase 1
-> **Thời gian ước tính**: 2-3 giờ  
-> **Bạn sẽ học**: Cách Coding Agent tương tác với mã nguồn qua Hệ thống tập tin ảo (Virtual File System), các công cụ file thao tác chính xác, và cơ chế quản lý context tự động.
 
-## Mục tiêu
-Trang bị cho Coding Agent khả năng đọc hiểu, tìm kiếm và chỉnh sửa an toàn các file source code thực tế trong dự án, đồng thời đảm bảo context window không bị tràn khi làm việc với codebase lớn.
+> **Mục tiêu**: Trang bị cho Coding Agent khả năng tương tác trực tiếp với mã nguồn trên đĩa thông qua Virtual File System (VFS): tìm kiếm từ khóa, duyệt cây thư mục, đọc nội dung file phân trang, và phẫu thuật chỉnh sửa code chính xác từng dòng.
+>
+> **Thời gian ước tính**: 2 - 2.5 giờ
+>
+> **Prerequisites**: Hoàn thành [Phase 1: Hello Coding Agent](phase_01_hello_agent.md).
 
-## Concept chính
+---
 
-### 7 Built-in File Tools
-Deep Agents cung cấp 7 công cụ tích hợp sẵn đóng vai trò như đôi tay và đôi mắt của Agent:
-- `ls`, `glob`, `grep`: Định vị và tìm kiếm file/code.
-- `read_file`: Đọc nội dung mã nguồn.
-- `write_file`, `edit_file`, `delete`: Chỉnh sửa và xóa file.
-Với một coding agent, việc chọn đúng công cụ là sống còn (ví dụ: dùng `grep` để tìm vị trí hàm thay vì đọc toàn bộ thư mục).
+## 1. Tổng quan & Lý thuyết cốt lõi
 
-### Phương pháp Surgical (Chỉnh sửa chính xác)
-Trong v0.7+, `write_file` sẽ ghi đè toàn bộ file hiện có. Do đó, với Coding Agent, bạn phải ưu tiên sử dụng `edit_file` (thay thế chính xác `old_string` thành `new_string`) cho các file code đã có sẵn. Cách tiếp cận "surgical" (phẫu thuật) này giúp hạn chế rủi ro LLM làm hỏng các đoạn code không liên quan. `write_file` chỉ nên dùng khi tạo file code hoàn toàn mới.
+### 1.1 Virtual File System (VFS) trong Deep Agents
+Một Coding Agent thực thụ không thể chỉ làm việc trên bộ nhớ đệm (RAM) hay nhận code dán vào chat. Nó phải có khả năng tương tác với hệ thống tập tin cục bộ để đọc các module phụ thuộc, tìm kiếm định nghĩa hàm và lưu lại các thay đổi code.
 
-### FilesystemBackend và StateBackend
-Để Agent chạm được vào mã nguồn thật, bạn cần đổi từ `StateBackend` (chỉ lưu nháp trên RAM cho dev/testing) sang `FilesystemBackend` trỏ tới thư mục dự án. Đặc biệt, phải luôn bật `virtual_mode=True` để "nhốt" Agent trong thư mục dự án (sandbox), ngăn chặn các tấn công path traversal ra ngoài hệ thống.
+Deep Agents cung cấp một lớp trừu tượng hóa mạnh mẽ gọi là **Virtual File System (VFS)**:
+- Agent không gọi trực tiếp các lệnh OS trần trụi (`os.system` hay `shutil`) mà thao tác thông qua **7 built-in tools** được chuẩn hóa.
+- Tách rời giao diện công cụ khỏi nơi lưu trữ thực tế thông qua cơ chế **Backend cắm rút (Pluggable Backends)**.
 
-### Đọc và tìm kiếm phân trang an toàn
-- **grep output_modes**: Hỗ trợ trả về `files_with_matches` (danh sách file), `content` (nội dung khớp), `count` (thống kê).
-- **read_file pagination**: Hỗ trợ `offset` và `limit`. Khi Agent đọc một file code lớn, nó không đọc một mạch mà đọc từng phần, framework trả về thông tin phân trang để Agent tự biết đọc tiếp.
+```
+┌────────────────────────────────────────────────────────┐
+│            7 Built-in File Operations Tools            │
+│    ls | glob | grep | read_file | write_file | ...     │
+├────────────────────────────────────────────────────────┤
+│             Virtual File System Abstraction            │
+├────────────────────────────────────────────────────────┤
+│                  Pluggable Backends                    │
+│  FilesystemBackend  │   StateBackend   │  StoreBackend │
+│ (Thư mục đĩa thật)  │  (In-Memory RAM) │  (Persistence)│
+└────────────────────────────────────────────────────────┘
+```
 
-### Tự động quản lý Context (Auto-eviction & Summarization)
-- **Auto-eviction**: Khi output của một tool quá lớn (>20K tokens), framework tự động ghi kết quả này vào file ảo ở hệ thống tệp và chỉ trả về đoạn preview cho cuộc hội thoại.
-- **Conversation Summarization**: Khi lịch sử chat chạm ngưỡng ~85% context window, framework tự động tóm tắt các tin nhắn cũ để duy trì phiên làm việc mượt mà.
+### 1.2 Các Storage Backend quan trọng
+1. **`FilesystemBackend`**:
+   - Gắn kết trực tiếp VFS vào một thư mục thực trên ổ đĩa máy tính (thường là thư mục `workspace/` của dự án).
+   - Tham số **`virtual_mode=True`** (BẮT BUỘC): Giữ chân Agent bên trong `root_dir`. Nếu Agent cố tình dùng đường dẫn `../../etc/passwd` hoặc truy cập file bên ngoài thư mục được chỉ định, backend sẽ ngay lập tức chặn lại và báo lỗi Path Traversal.
+2. **`StateBackend`**:
+   - Lưu trữ toàn bộ file trên RAM (trong state graph của LangGraph). Rất hữu ích cho unit test tự động hoặc môi trường tạm thời.
+3. **`CompositeBackend`**:
+   - Cho phép định tuyến các prefix đường dẫn khác nhau đến các backend khác nhau (ví dụ: `/workspace` ghi vào đĩa, `/memory` ghi vào Store persistence).
 
-## 📖 Đọc tài liệu
+### 1.3 7 Built-in Tools và Quy tắc sử dụng
 
-Bảng chỉ dẫn đọc — đọc theo thứ tự trước khi code:
+| Tool | Công dụng | Điểm lưu ý cốt lõi |
+| :--- | :--- | :--- |
+| `ls` | Liệt kê danh sách file/thư mục tại đường dẫn chỉ định. | Dùng để khảo sát nhanh cấu trúc thư mục con. |
+| `glob` | Tìm kiếm đường dẫn file theo pattern (VD: `**/*.py`, `tests/test_*.py`). | Giúp Agent định vị nhanh các file cần chú ý mà không cần đệ quy thủ công. |
+| `grep` | Tìm kiếm chuỗi/regex trong nội dung nhiều file. | Hỗ trợ 3 output modes: `files_with_matches` (mặc định), `content` (kèm dòng code và số dòng), `count`. |
+| `read_file` | Đọc nội dung file văn bản. | Hỗ trợ phân trang qua `offset` (dòng bắt đầu) và `limit` (số dòng đọc). Giúp tránh tràn context với file lớn. |
+| `edit_file` | Thay thế chính xác một đoạn chuỗi cũ (`old_string`) bằng chuỗi mới (`new_string`). | **Công cụ phẫu thuật chính xác**: Chỉ sửa đúng đoạn code cần sửa, giữ nguyên phần còn lại của file. |
+| `write_file` | Ghi đè toàn bộ nội dung file. | **CẢNH BÁO v0.7+**: `write_file` ghi đè toàn bộ nội dung mà không cảnh báo lỗi FileExists. Chỉ dùng khi tạo file mới hoàn toàn! |
+| `delete` | Xóa một file khỏi VFS. | Cần được bảo vệ cẩn trọng trong các giai đoạn sau. |
 
-| # | Tài liệu | Phần cần đọc | Bạn sẽ hiểu được gì |
-|---|----------|-------------|---------------------|
-| 1 | file:///home/lai/Documents/divein-ai-agent/guideline/01_deepagent_version_update.md | Phần 6. File tool | Những rào chắn đã bị gỡ bỏ ở v0.7 (`write_file` ghi đè toàn bộ) |
-| 2 | file:///home/lai/Documents/divein-ai-agent/guideline/05_virtual_filesystem.md | Các Built-in Filesystem Tools | 7 file tools hoạt động ra sao và sự khác biệt giữa các Backend |
-| 3 | file:///home/lai/Documents/divein-ai-agent/guideline/05_virtual_filesystem.md | Tự Động Quản Lý Context | Cơ chế Auto-eviction và tóm tắt hội thoại |
+### 1.4 Cơ chế Auto-Eviction và Summarization
+Khi Agent duyệt một codebase lớn, kết quả của một lệnh `grep` hoặc `read_file` có thể lên tới hàng chục nghìn token:
+- **Auto-Eviction**: Trong Deep Agents, nếu output của một tool vượt quá ngưỡng an toàn (~20.000 tokens), framework sẽ tự động lưu output đó thành một file tạm trên VFS và chỉ trả về trong cuộc trò chuyện đường dẫn file kèm một đoạn preview ngắn. Điều này bảo vệ context window không bị sập.
+- **Context Summarization**: Khi tổng lịch sử hội thoại đạt khoảng 85% dung lượng ngữ cảnh của mô hình, middleware sẽ tự động tóm tắt các bước cũ và nén lại.
 
-## 🧭 Hướng dẫn thực hiện
+### 1.5 Workflow tư duy chuẩn của Coding Agent
+Một Coding Agent chuyên nghiệp không bao giờ nhảy ngay vào sửa file. Nó phải tuân thủ quy trình 4 bước:
+1. **Khảo sát cấu trúc**: Dùng `ls` hoặc `glob` để xem cấu trúc dự án.
+2. **Định vị điểm nghi vấn**: Dùng `grep` tìm tên hàm, biến hoặc thông điệp lỗi để khoanh vùng file.
+3. **Đọc chi tiết**: Dùng `read_file` đọc ngữ cảnh xung quanh dòng bị lỗi.
+4. **Phẫu thuật code**: Dùng `edit_file` để sửa chính xác đoạn code bị lỗi, hoặc `write_file` nếu tạo file test mới.
 
-### Bước 1: Cấu hình FilesystemBackend
-**Đọc**: file:///home/lai/Documents/divein-ai-agent/guideline/05_virtual_filesystem.md
-**Làm gì**: Khởi tạo `FilesystemBackend` trỏ đến thư mục mã nguồn mục tiêu với `virtual_mode=True`. Đưa backend này vào API khởi tạo.
-**Tại sao**: Coding Agent cần truy cập vào hệ thống tệp của dự án để thao tác. `virtual_mode` bảo vệ hệ điều hành của bạn khỏi các hành động đọc/ghi vượt quá ranh giới workspace.
+---
 
-### Bước 2: Thiết kế Workflow vào System Prompt
-**Đọc**: file:///home/lai/Documents/divein-ai-agent/guideline/01_deepagent_version_update.md
-**Làm gì**: Cập nhật system prompt để dạy Agent quy trình làm việc: Dùng `ls`/`grep` để tìm vị trí -> `read_file` đọc logic code -> `edit_file` để sửa chính xác. Nhấn mạnh việc cấm dùng `write_file` để sửa file đang có.
-**Tại sao**: Agent có thể có xu hướng ghi đè toàn bộ file. Dạy nó workflow "surgical" sẽ bảo toàn mã nguồn gốc.
+## 2. Tài liệu tham khảo mở rộng
 
-### Bước 3: Thử nghiệm phân trang và giới hạn kết quả
-**Đọc**: file:///home/lai/Documents/divein-ai-agent/guideline/05_virtual_filesystem.md
-**Làm gì**: Đặt yêu cầu cho agent tìm một từ khóa phổ biến trong repo, quan sát cách `grep` trả về `truncated=True`. Thử cho agent đọc một file rất lớn để thấy `read_file` phân trang bằng offset.
-**Tại sao**: Hiểu được cách Deep Agents ngăn chặn tràn context window giúp bạn biết giới hạn khi vận hành Agent trên các dự án khổng lồ.
+| Tài liệu | Phần trọng tâm | Mục tiêu học tập |
+| :--- | :--- | :--- |
+| [05_virtual_filesystem.md](../guideline/05_virtual_filesystem.md) | Built-in Tools & Storage Backends | Tìm hiểu chi tiết tham số của 7 file tools và cách khởi tạo `FilesystemBackend`. |
+| [05_virtual_filesystem.md](../guideline/05_virtual_filesystem.md) | Tự Động Quản Lý Context & Auto-Eviction | Nắm cơ chế bảo vệ context khi đọc file lớn. |
+| [01_deepagent_version_update.md](../guideline/01_deepagent_version_update.md) | Phần 6. File tool: Mạnh mẽ hơn | Hiểu thay đổi breaking change: `write_file` ghi đè và `edit_file` thay thế `patch`. |
 
-## ✅ Checkpoint — Tự kiểm tra
-- Agent có thể chỉnh sửa thành công một hàm nhỏ trong file code bằng cách dùng `edit_file` chưa?
-- Khi bạn yêu cầu Agent thử đọc file bên ngoài thư mục dự án, nó có bị chặn lại bởi `virtual_mode` không?
-- Bạn đã thấy Agent tự động đọc nối tiếp file dài nhờ phân trang chưa?
+---
 
-## ⚠️ Lưu ý quan trọng
-- **Nguy cơ ghi đè**: Ở v0.7, `write_file` sẽ ghi đè lập tức nội dung cũ. Hãy kiểm soát cẩn thận hành vi này.
-- **Parsing kết quả tool**: Nếu code của bạn tự động bóc tách kết quả từ tool (ví dụ split tab), hãy chú ý cập nhật logic phân tích do một số định dạng trả về đã thay đổi.
+## 3. Hướng dẫn thực hành từng bước
 
-## 🔗 Tham khảo thêm
-- Khám phá `FilesystemPermission` để kiểm soát các tác vụ nhạy cảm như xóa file hoặc ghi đè thư mục quan trọng.
-</Phase 2: File Operations — Đọc, ghi, tìm kiếm code>
+### Bước 1: Chuẩn bị Workspace giả lập chứa bug
+
+Tạo một thư mục con `workspace/` đóng vai trò là dự án phần mềm mà Agent sẽ thao tác. Bên trong tạo 2 file Python có chứa một lỗi logic:
+
+```bash
+mkdir -p workspace/src
+mkdir -p workspace/tests
+```
+
+Tạo file `workspace/src/math_service.py`:
+```python
+"""Module xử lý tính toán tài chính."""
+
+
+def calculate_discount(price: float, discount_percent: float) -> float:
+    """Tính giá sau chiết khấu."""
+    if discount_percent < 0 or discount_percent > 100:
+        raise ValueError("Tỉ lệ chiết khấu không hợp lệ")
+
+    # BUG CỐ Ý: Nhân nhầm với 10 thay vì chia cho 100
+    discount_amount = price * (discount_percent * 10)
+    return price - discount_amount
+
+
+def format_currency(amount: float) -> str:
+    """Định dạng số tiền hiển thị."""
+    return f"{amount:,.2f} VNĐ"
+```
+
+Tạo file `workspace/tests/test_math.py`:
+```python
+"""Unit test cho math_service."""
+
+from src.math_service import calculate_discount
+
+
+def test_discount():
+    # Mua hàng 100.000 với discount 10% -> phải còn 90.000
+    result = calculate_discount(100000.0, 10.0)
+    assert result == 90000.0, f"Kỳ vọng 90000.0 nhưng nhận {result}"
+```
+
+### Bước 2: Cấu hình `FilesystemBackend`
+
+Tạo file `src/backend.py` để khởi tạo backend an toàn trỏ vào thư mục `workspace/`:
+
+```python
+"""Cấu hình Storage Backend an toàn cho Coding Agent."""
+
+import os
+from deepagents.backends import FilesystemBackend
+
+
+def get_workspace_backend(workspace_path: str = "workspace") -> FilesystemBackend:
+    """Tạo FilesystemBackend với chế độ virtual_mode bật để cô lập Agent.
+
+    Args:
+        workspace_path: Đường dẫn tới thư mục gốc của workspace.
+
+    Returns:
+        Instance của FilesystemBackend đã được kiểm tra tính hợp lệ.
+    """
+    abs_path = os.path.abspath(workspace_path)
+    os.makedirs(abs_path, exist_ok=True)
+
+    # virtual_mode=True đảm bảo agent không bao giờ thoát ra khỏi thư mục này
+    backend = FilesystemBackend(
+        root_dir=abs_path,
+        virtual_mode=True,
+    )
+    return backend
+```
+
+### Bước 3: Thiết kế System Prompt hướng dẫn quy trình duyệt và sửa code
+
+Tạo file `src/prompts_v2.py`:
+
+```python
+"""System Prompt chuyên biệt cho File Operations."""
+
+FILE_OPS_SYSTEM_PROMPT = """Bạn là một AI Software Debugger chuyên nghiệp, làm việc trực tiếp trên workspace mã nguồn.
+
+Quy trình giải quyết vấn đề của bạn:
+1. KHÔNG PHỎNG ĐOÁN: Luôn bắt đầu bằng cách dùng `glob` hoặc `ls` để tìm hiểu cấu trúc dự án.
+2. ĐỊNH VỊ CHÍNH XÁC: Sử dụng `grep` với `output_mode="content"` để tìm từ khóa hoặc thông báo lỗi cụ thể kèm số dòng.
+3. ĐỌC KỸ TRƯỚC KHI SỬA: Dùng `read_file` đọc ngữ cảnh các dòng trước và sau vị trí lỗi.
+4. PHẪU THUẬT AN TOÀN:
+   - Sử dụng `edit_file` để sửa đúng đoạn code cần sửa (`old_string` -> `new_string`).
+   - TUYỆT ĐỐI KHÔNG dùng `write_file` để ghi lại file đang có sẵn vì sẽ làm mất toàn bộ code còn lại nếu bạn không ghi đầy đủ.
+   - Chỉ dùng `write_file` khi tạo mới file test hoặc file module mới.
+5. XÁC NHẬN: Sau khi sửa, kiểm tra lại bằng `read_file` xem file đã cập nhật đúng như kỳ vọng chưa.
+"""
+```
+
+### Bước 4: Khởi tạo Agent với Backend và File Tools
+
+Trong Deep Agents, khi bạn truyền tham số `backend` vào `create_deep_agent`, framework sẽ **tự động nạp 7 file tools** liên kết với backend đó vào danh sách công cụ của Agent!
+
+Tạo file `src/agent_file_ops.py`:
+
+```python
+"""Coding Agent với năng lực File Operations hoàn chỉnh."""
+
+import os
+from dotenv import load_dotenv
+from langchain_openai import ChatOpenAI
+from deepagents import create_deep_agent
+
+from src.backend import get_workspace_backend
+from src.prompts_v2 import FILE_OPS_SYSTEM_PROMPT
+
+load_dotenv()
+
+
+def build_file_ops_agent():
+    """Khởi tạo agent tích hợp sẵn VFS và 7 file tools."""
+    llm = ChatOpenAI(
+        model=os.getenv("AGENTSEEK_MODEL", "zai-org/GLM-5.2"),
+        api_key=os.getenv("OPENAI_API_KEY"),
+        base_url=os.getenv("OPENAI_API_BASE", "https://api.siliconflow.cn/v1"),
+        temperature=0.0,
+    )
+
+    # Khởi tạo backend trỏ vào workspace
+    backend = get_workspace_backend("workspace")
+
+    # Khi truyền backend, create_deep_agent tự động kích hoạt:
+    # ls, glob, grep, read_file, write_file, edit_file, delete
+    agent = create_deep_agent(
+        model=llm,
+        tools=[],  # Không cần custom tools vì file tools được harness tự inject
+        backend=backend,
+        system_prompt=FILE_OPS_SYSTEM_PROMPT,
+    )
+
+    return agent
+
+
+if __name__ == "__main__":
+    bot = build_file_ops_agent()
+
+    # Ra lệnh cho Agent tìm và sửa bug trong workspace
+    task = (
+        "Trong thư mục workspace có hàm calculate_discount đang bị tính sai giá trị chiết khấu. "
+        "Hãy tìm file đó, đọc hiểu nguyên nhân và sử dụng công cụ edit_file để sửa lại công thức cho đúng."
+    )
+
+    print(f"Bắt đầu thực thi nhiệm vụ: {task}\n")
+    response = bot.invoke({"messages": [{"role": "user", "content": task}]})
+
+    print("\n--- KẾT QUẢ TỪ AGENT ---")
+    print(response["messages"][-1].content)
+```
+
+---
+
+## 4. Kịch bản thực chiến (End-to-End Walkthrough)
+
+Chạy thử nghiệm Agent:
+
+```bash
+python -m src.agent_file_ops
+```
+
+**Quan sát chuỗi hành vi thực tế của Agent**:
+1. **Lệnh 1 (`glob`)**: Agent gọi `glob(pattern="**/*.py")` -> Nhận diện `src/math_service.py` và `tests/test_math.py`.
+2. **Lệnh 2 (`grep`)**: Agent gọi `grep(pattern="calculate_discount", output_mode="content")` -> Xác định hàm nằm trong `src/math_service.py` tại dòng 4.
+3. **Lệnh 3 (`read_file`)**: Agent gọi `read_file(path="src/math_service.py", offset=1, limit=20)` -> Phát hiện dòng code lỗi:
+   ```python
+   discount_amount = price * (discount_percent * 10)
+   ```
+4. **Lệnh 4 (`edit_file`)**: Agent gọi `edit_file`:
+   - `path`: `"src/math_service.py"`
+   - `old_string`: `"discount_amount = price * (discount_percent * 10)"`
+   - `new_string`: `"discount_amount = price * (discount_percent / 100)"`
+5. **Phản hồi**: Agent thông báo cho bạn biết đã định vị được file, chỉ rõ lỗi nhân với 10 thay vì chia cho 100, và đã sửa xong file bằng `edit_file`.
+
+---
+
+## 5. Checkpoint — Tự kiểm tra
+
+Kiểm tra trực tiếp file trên đĩa để xác minh:
+
+```bash
+# Kiểm tra nội dung file math_service.py trong workspace
+cat workspace/src/math_service.py
+```
+
+- [ ] Dòng tính `discount_amount` đã được sửa thành `price * (discount_percent / 100)`.
+- [ ] Các hàm khác (`format_currency`) trong file vẫn còn nguyên vẹn, không bị mất.
+- [ ] Chạy lệnh test xem bug đã thực sự được fix chưa:
+  ```bash
+  PYTHONPATH=workspace pytest workspace/tests/test_math.py
+  ```
+  Test phải **PASS** 100%!
+
+---
+
+## 6. Lỗi thường gặp & Best Practices
+
+1. **Lỗi `PathOutsideRootError` hoặc Permission Denied**:
+   - *Nguyên nhân*: Agent cố gắng truyền đường dẫn tuyệt đối dạng `/home/...` thay vì đường dẫn tương đối so với `root_dir`.
+   - *Khắc phục*: Trong System Prompt, luôn hướng dẫn Agent: "Mọi đường dẫn file đều tính tương đối từ thư mục gốc của workspace (ví dụ: `src/main.py`, không dùng `/workspace/src/main.py`)".
+
+2. **`edit_file` báo lỗi StringNotFound**:
+   - *Nguyên nhân*: `old_string` không khớp 100% từng khoảng trắng, thụt đầu dòng (indentation) so với nội dung thực tế trong file.
+   - *Khắc phục*: Khuyên Agent luôn gọi `read_file` trước để copy chính xác đoạn code cần thay thế bao gồm cả ký tự xuống dòng và khoảng trắng.
+
+3. **Mất toàn bộ nội dung file do gọi nhầm `write_file`**:
+   - *Nguyên nhân*: Trong v0.7+, `write_file` không kiểm tra file đã tồn tại hay chưa mà ghi đè trắng.
+   - *Khắc phục*: Nghiêm cấm trong System Prompt hành vi dùng `write_file` để sửa code đang có.

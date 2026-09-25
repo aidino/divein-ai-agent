@@ -97,16 +97,16 @@ Agent → tool: search_codebase(query, mode="hybrid") → LightRAG → kết qu�
 Agent → MCP client → LightRAG MCP server → kết quả
 ```
 
-Approach B sạch hơn vì tách biệt hoàn toàn, và bài [14_mcp.md](file:///home/lai/Documents/divein-ai-agent/guideline/14_mcp.md) đã dạy cách tích hợp MCP.
+Approach B sạch hơn vì tách biệt hoàn toàn, và bài [14_mcp.md](../guideline/14_mcp.md) đã dạy cách tích hợp MCP.
 
 ### Tài liệu cần đọc
 
 | Nguồn | Đọc gì | Lý do |
 |-------|--------|-------|
-| [05_virtual_filesystem.md](file:///home/lai/Documents/divein-ai-agent/guideline/05_virtual_filesystem.md) | grep output_modes, glob | Tầng 1: deterministic search |
-| [14_mcp.md](file:///home/lai/Documents/divein-ai-agent/guideline/14_mcp.md) | MCP server creation, `FastMCP`, `MultiServerMCPClient` | Nếu dùng Approach B (MCP) |
+| [05_virtual_filesystem.md](../guideline/05_virtual_filesystem.md) | grep output_modes, glob | Tầng 1: deterministic search |
+| [14_mcp.md](../guideline/14_mcp.md) | MCP server creation, `FastMCP`, `MultiServerMCPClient` | Nếu dùng Approach B (MCP) |
 | [LightRAG GitHub](https://github.com/HKUDS/LightRAG) | README, API docs | Setup LightRAG, indexing, query modes |
-| [deepagents/powercontext template](file:///home/lai/Documents/divein-ai-agent) | `agentseek create deepagents/powercontext` | Tham khảo cách seekdb+PowerContext quản lý context |
+| [deepagents/powercontext template](../) | `agentseek create deepagents/powercontext` | Tham khảo cách seekdb+PowerContext quản lý context |
 | tree-sitter docs | Parsers, query API | Nếu muốn build AST index tự tay |
 
 ---
@@ -121,7 +121,7 @@ Approach B sạch hơn vì tách biệt hoàn toàn, và bài [14_mcp.md](file:/
 | Không cần Docker | Không cô lập — crash ảnh hưởng host |
 | Nhanh nhất | **KHÔNG BAO GIỜ** dùng cho production |
 
-**Đọc**: [05_virtual_filesystem.md](file:///home/lai/Documents/divein-ai-agent/guideline/05_virtual_filesystem.md) — phần LocalShellBackend
+**Đọc**: [05_virtual_filesystem.md](../guideline/05_virtual_filesystem.md) — phần LocalShellBackend
 
 ### Option B: Docker Container — AIO Sandbox
 
@@ -139,7 +139,7 @@ Tích hợp với Deep Agents:
 - Viết custom tool hoặc MCP client để giao tiếp với sandbox API
 - Agent gọi `execute_in_sandbox(command)` thay vì `execute(command)`
 
-**Đọc**: [12_sandboxes.md](file:///home/lai/Documents/divein-ai-agent/guideline/12_sandboxes.md) — phần Sandbox-as-Tool pattern
+**Đọc**: [12_sandboxes.md](../guideline/12_sandboxes.md) — phần Sandbox-as-Tool pattern
 
 ### Option C: Cloud Sandbox
 
@@ -149,7 +149,7 @@ Tích hợp với Deep Agents:
 | **E2B** | Firecracker MicroVM | Nhanh, popular, nhiều SDK |
 | **Daytona** | OCI container | Git-first, dev environment focus |
 
-**Đọc**: [12_sandboxes.md](file:///home/lai/Documents/divein-ai-agent/guideline/12_sandboxes.md) — toàn bài
+**Đọc**: [12_sandboxes.md](../guideline/12_sandboxes.md) — toàn bài
 
 **Template tham khảo**: `agentseek create deepagents/sandbox --checkout main`
 
@@ -194,15 +194,15 @@ flowchart LR
 
 | Phase | Concept chính | Đọc tài liệu | Template tham khảo |
 |-------|-------------|--------------|-------------------|
-| **1. Hello Agent** | `create_deep_agent()`, custom tool, AgentSeek lifecycle, model provider config | [00](file:///home/lai/Documents/divein-ai-agent/guideline/00_preparation.md), [01](file:///home/lai/Documents/divein-ai-agent/guideline/01_deepagent_version_update.md), [03](file:///home/lai/Documents/divein-ai-agent/guideline/03_agent_framework_to_agent_harness.md), [04](file:///home/lai/Documents/divein-ai-agent/guideline/04_quickstart_first_deep_agent.md) | `deepagents/default` |
-| **2. File Ops** | 7 file tools, `FilesystemBackend`, auto-eviction, grep modes, `edit_file` vs `write_file` | [05](file:///home/lai/Documents/divein-ai-agent/guideline/05_virtual_filesystem.md), [01](file:///home/lai/Documents/divein-ai-agent/guideline/01_deepagent_version_update.md) | — |
-| **2.5 Codebase Intelligence** | AST indexing (tree-sitter), GraphRAG (LightRAG), hybrid retrieval, repo map pattern, MCP integration | [05](file:///home/lai/Documents/divein-ai-agent/guideline/05_virtual_filesystem.md), [14](file:///home/lai/Documents/divein-ai-agent/guideline/14_mcp.md), LightRAG docs | `deepagents/powercontext` |
-| **3. Task Planning** | `TodoListMiddleware`, middleware architecture, `SummarizationMiddleware`, cognitive anchor | [06](file:///home/lai/Documents/divein-ai-agent/guideline/06_task_planning.md) | — |
-| **4. Code Execution** | LocalShell / Docker AIO / Cloud Sandbox, Sandbox-as-Tool, `CodeInterpreterMiddleware` | [05](file:///home/lai/Documents/divein-ai-agent/guideline/05_virtual_filesystem.md), [12](file:///home/lai/Documents/divein-ai-agent/guideline/12_sandboxes.md), [17](file:///home/lai/Documents/divein-ai-agent/guideline/17_interpreters.md) | `deepagents/sandbox` |
-| **5. Sub-agents** | `task` tool, async subagents, dynamic subagents, fan-out/verify pattern | [07](file:///home/lai/Documents/divein-ai-agent/guideline/07_subagents.md), [08](file:///home/lai/Documents/divein-ai-agent/guideline/08_async_subagents.md), [18](file:///home/lai/Documents/divein-ai-agent/guideline/18_dynamic_subagents.md) | `deepagents/subagents-dynamic` |
-| **6. Safety** | `FilesystemPermission`, whitelist pattern, HITL, `PolicyWrapper`, subagent inheritance | [13](file:///home/lai/Documents/divein-ai-agent/guideline/13_filesystem_permissions.md), [11](file:///home/lai/Documents/divein-ai-agent/guideline/11_human_in_the_loop.md) | — |
-| **7. Quality Gate** | `RubricMiddleware`, evidence tool, fail-closed, frozen criteria, two-model architecture | [15](file:///home/lai/Documents/divein-ai-agent/guideline/15_grading_rubrics.md) | `langchain/rubric` |
-| **8. Production** | Streaming v3, Memory (v0.8), MCP, Skills, Managed Deep Agents, LLM Gateway, Context Hub | [16](file:///home/lai/Documents/divein-ai-agent/guideline/16_streaming.md), [10](file:///home/lai/Documents/divein-ai-agent/guideline/10_long_term_memory.md), [14](file:///home/lai/Documents/divein-ai-agent/guideline/14_mcp.md), [09](file:///home/lai/Documents/divein-ai-agent/guideline/09_skills.md) | `deepagents/streaming`, `deepagents/mcp` |
+| **1. Hello Agent** | `create_deep_agent()`, custom tool, AgentSeek lifecycle, model provider config | [00](../guideline/00_preparation.md), [01](../guideline/01_deepagent_version_update.md), [03](../guideline/03_agent_framework_to_agent_harness.md), [04](../guideline/04_quickstart_first_deep_agent.md) | `deepagents/default` |
+| **2. File Ops** | 7 file tools, `FilesystemBackend`, auto-eviction, grep modes, `edit_file` vs `write_file` | [05](../guideline/05_virtual_filesystem.md), [01](../guideline/01_deepagent_version_update.md) | — |
+| **2.5 Codebase Intelligence** | AST indexing (tree-sitter), GraphRAG (LightRAG), hybrid retrieval, repo map pattern, MCP integration | [05](../guideline/05_virtual_filesystem.md), [14](../guideline/14_mcp.md), LightRAG docs | `deepagents/powercontext` |
+| **3. Task Planning** | `TodoListMiddleware`, middleware architecture, `SummarizationMiddleware`, cognitive anchor | [06](../guideline/06_task_planning.md) | — |
+| **4. Code Execution** | LocalShell / Docker AIO / Cloud Sandbox, Sandbox-as-Tool, `CodeInterpreterMiddleware` | [05](../guideline/05_virtual_filesystem.md), [12](../guideline/12_sandboxes.md), [17](../guideline/17_interpreters.md) | `deepagents/sandbox` |
+| **5. Sub-agents** | `task` tool, async subagents, dynamic subagents, fan-out/verify pattern | [07](../guideline/07_subagents.md), [08](../guideline/08_async_subagents.md), [18](../guideline/18_dynamic_subagents.md) | `deepagents/subagents-dynamic` |
+| **6. Safety** | `FilesystemPermission`, whitelist pattern, HITL, `PolicyWrapper`, subagent inheritance | [13](../guideline/13_filesystem_permissions.md), [11](../guideline/11_human_in_the_loop.md) | — |
+| **7. Quality Gate** | `RubricMiddleware`, evidence tool, fail-closed, frozen criteria, two-model architecture | [15](../guideline/15_grading_rubrics.md) | `langchain/rubric` |
+| **8. Production** | Streaming v3, Memory (v0.8), MCP, Skills, Managed Deep Agents, LLM Gateway, Context Hub | [16](../guideline/16_streaming.md), [10](../guideline/10_long_term_memory.md), [14](../guideline/14_mcp.md), [09](../guideline/09_skills.md) | `deepagents/streaming`, `deepagents/mcp` |
 
 ---
 
