@@ -103,7 +103,7 @@ Vòng đời chuẩn: `pending` → `in_progress` → `completed`. Tuy nhiên, t
 Khi tiếp nhận một bài toán phức tạp, kịch bản hành vi kinh điển của một Deep Agent diễn ra qua 3 pha:
 
 ```
-[Nhận yêu cầu] 
+[Nhận yêu cầu]
       │
       ▼
 [Pha 1: Lập kế hoạch] ──> Gọi write_todos (Tạo danh sách toàn bộ ở trạng thái pending)
@@ -461,7 +461,7 @@ Bảng phân loại dưới đây giúp bạn tra cứu nhanh toàn bộ hệ si
 | | `ModelCallLimitMiddleware` | Giới hạn số lần gọi LLM tối đa |
 | **Tinh chỉnh Context** | `ContextEditingMiddleware` | Dọn dẹp có chọn lọc các kết quả gọi tool cũ không còn giá trị |
 
-![Infographic Middleware Deep Agents: Mặc định, Tham số chuyên dụng, Mảng middleware tùy chọn, và Checkpointer độc lập](../public/imgs/12-infographic-middleware.png)
+![Infographic Middleware Deep Agents: Mặc định, Tham số chuyên dụng, Mảng middleware tùy chọn, và Checkpointer độc lập](images/infographic-middleware.png)
 
 ---
 
