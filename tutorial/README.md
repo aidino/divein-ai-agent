@@ -30,7 +30,7 @@
 
 ## Cách sử dụng
 
-1. Đọc [Design Report V2](../guideline/) để hiểu tổng quan kiến trúc
+1. Đọc [Design Report V2](00_design_report.md) để hiểu tổng quan kiến trúc
 2. Làm từng Phase **theo thứ tự** — mỗi phase xây thêm một subsystem
 3. **Đọc tài liệu** theo bảng chỉ dẫn trong từng phase **trước khi code**
 4. Tham khảo AgentSeek template khi cần xem cấu trúc chuẩn
