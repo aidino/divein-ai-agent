@@ -77,4 +77,51 @@ Bảng chỉ dẫn đọc — đọc theo thứ tự trước khi code:
 ## 🔗 Tham khảo thêm
 - Tìm hiểu template `deepagents/powercontext` và `seekdb` để áp dụng ngay mô hình Hybrid Retrieval.
 - Sử dụng chuẩn MCP để liên kết sức mạnh Intelligence cho mọi sub-agent trong hệ thống.
-</Phase 2.5: Codebase Intelligence — Hiểu codebase lớn>
+
+---
+
+## 🧩 Optional: Tích hợp Understand-Anything
+
+> **Repo**: [Egonex-AI/Understand-Anything](https://github.com/Egonex-AI/Understand-Anything)
+> **Mức độ**: Nâng cao — không bắt buộc, nhưng rất hữu ích cho codebase phức tạp
+
+### Understand-Anything là gì?
+
+Understand-Anything là một **multi-agent analysis pipeline** biến bất kỳ codebase nào thành một **đồ thị tri thức tương tác** (interactive knowledge graph) mà bạn có thể duyệt, tìm kiếm, và đặt câu hỏi.
+
+### Tại sao phù hợp cho Phase 2.5?
+
+| Vấn đề | LightRAG giải quyết | Understand-Anything bổ sung thêm |
+|--------|---------------------|----------------------------------|
+| Hiểu cấu trúc code | Đồ thị entity-relationship | **Visual dashboard** tương tác — zoom, pan, click nodes |
+| Onboarding dự án mới | Query modes (local/global) | **Guided Tours** — walkthrough tự động theo dependency order |
+| Tìm kiếm ngữ nghĩa | Dual-level retrieval | **Semantic search** tích hợp sẵn + persona-adaptive UI |
+| Mapping business logic | Chưa hỗ trợ | **Domain Mapping** — ánh xạ code ↔ business process |
+
+### Cách tích hợp vào Coding Agent
+
+Understand-Anything hỗ trợ **MCP (Model Context Protocol)** — hoàn toàn tương thích với kiến trúc Phase 2.5:
+
+**Approach 1**: Dùng như **MCP Server** cho Deep Agent
+- Understand-Anything cung cấp các AI skills (`understand-chat`, `understand-explain`, `understand-diff`) theo chuẩn MCP
+- Agent gọi skill qua `MultiServerMCPClient` (đã học trong bài [14_mcp.md](file:///home/lai/Documents/divein-ai-agent/guideline/14_mcp.md))
+
+**Approach 2**: Dùng như **pre-indexing tool**
+- Chạy `/understand` để build knowledge graph (`<project>/.ua/knowledge-graph.json`)
+- Inject kết quả vào context của Agent như structured reference
+- Agent dùng knowledge graph để định hướng trước khi grep/read_file
+
+### Khi nào nên dùng?
+
+| Tình huống | Recommendation |
+|-----------|----------------|
+| Repo nhỏ (<50 files) | grep/glob đủ — **không cần** |
+| Repo vừa (50-500 files) | LightRAG hoặc tree-sitter — **chọn 1** |
+| Repo lớn (>500 files), cần visual | LightRAG + Understand-Anything — **kết hợp cả hai** |
+| Onboarding team members | Understand-Anything dashboard — **rất hữu ích** |
+
+### Lưu ý khi tích hợp
+- Understand-Anything tạo output tại `.ua/knowledge-graph.json` — cần cấu hình `FilesystemPermission` cho phép Agent đọc thư mục `.ua/`
+- Dashboard chạy riêng (web UI) — không ảnh hưởng đến Agent runtime
+- Các AI skills hoạt động qua MCP, cần đảm bảo async-only (`ainvoke`)
+
