@@ -14,7 +14,7 @@ def run_interactive_session():
     """Khởi chạy phiên làm việc tương tác qua terminal."""
     console.print(
         Panel.fit(
-            "[bold cyan]🤖 Dino Coding Agent — Phase 1: Hello Harness[/bold cyan]\n"
+            "[bold cyan]🤖 Dino Coding Agent — Phase 2: VFS & Hashline[/bold cyan]\n"
             "[dim]Gõ 'exit' hoặc 'quit' để thoát.[/dim]",
             border_style="cyan",
         )
@@ -65,6 +65,9 @@ def run_interactive_session():
                     console.print(f"[bold green]↳ Tool Result:[/bold green] [dim]{msg.content}[/dim]\n")
 
             # 3. Hiển thị tin nhắn phản hồi cuối cùng của Agent
+            if not new_messages:
+                console.print("[dim]Agent không phản hồi.[/dim]")
+                continue
             ai_message = new_messages[-1]
             console.print("\n[bold magenta]Dino Coding Agent:[/bold magenta]")
             console.print(Markdown(str(ai_message.content)))

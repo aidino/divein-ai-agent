@@ -142,16 +142,16 @@ class AppConfig(BaseModel):
                 raise ImportError(
                     "Để dùng Anthropic trực tiếp, bạn cần cài đặt: uv add langchain-anthropic"
                 )
-            return ChatAnthropic(
+            anthropic_kwargs: dict = dict(
                 model_name=model_name,
                 api_key=SecretStr(api_key),
                 temperature=self.temperature,
-                max_tokens_to_sample=self.max_tokens,
                 streaming=True,
-                # timeout/stop là tham số bắt buộc trong chữ ký BaseChatModel 1.x
                 timeout=None,
                 stop=None,
+                max_tokens=self.max_tokens,
             )
+            return ChatAnthropic(**anthropic_kwargs)  # type: ignore[arg-type]
 
         else:
             raise NotImplementedError(f"Provider '{self.provider}' chưa được hỗ trợ.")

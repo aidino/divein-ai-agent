@@ -8,6 +8,7 @@ authors = [
 ]
 requires-python = ">=3.12"
 dependencies = [
+    "ast-grep-py>=0.45.3",
     "deepagents>=0.7.19",
     "langchain-core>=1.6.5",
     "langchain-openai>=1.6.6",
@@ -27,3 +28,6 @@ package = true
 dev = [
     "pytest>=9.1.1",
 ]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

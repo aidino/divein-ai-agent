@@ -1,26 +1,59 @@
 """Module khởi tạo và đóng gói Agent Harness với Deep Agents."""
 
-from deepagents import create_deep_agent
+import os
+
+from deepagents import HarnessProfile, create_deep_agent, register_harness_profile
+from deepagents.backends import FilesystemBackend
 from langgraph.graph.state import CompiledStateGraph
+
 from dino_coding.config import config
 from dino_coding.prompt import build_coding_system_prompt
 from dino_coding.tools.base import initial_tools
+from dino_coding.tools.editor import edit
+from dino_coding.tools.fs import file_tools
+
+
+def _get_workspace_root() -> str:
+    """Workspace root dùng chung bởi cả custom tools lẫn deepagents backend."""
+    return os.getenv("DINO_WORKSPACE", os.path.join(os.getcwd(), "workspace"))
+
+
+# Loại bỏ built-in read_file/write_file/edit_file/delete vì custom hashline
+# tools đã thay thế. Giữ ls/glob/grep/execute làm công cụ bổ trợ.
+# Profile đăng ký một lần trước khi tạo agent.
+_EXCLUDED_BUILTINS = frozenset({"read_file", "write_file", "edit_file", "delete"})
 
 
 def create_my_coding_agent() -> CompiledStateGraph:
-    """Khởi tạo một instance Deep Agent hoàn chỉnh với cấu hình và công cụ Phase 1."""
-    # 1. Lấy LLM instance chuẩn hóa
+    """Khởi tạo Deep Agent với bộ tool VFS Phase 2.
+
+    - Custom tools (read, write, edit): hashline engine tự xây.
+    - Built-in tools (ls, glob, grep, execute): giữ lại từ deepagents
+      để agent có khả năng tìm kiếm/chạy lệnh.
+    - Built-in read_file/write_file/edit_file/delete: loại bỏ vì trùng
+      chức năng và không có bảo vệ hashline.
+    """
     llm = config.get_llm()
-
-    # 2. Xây dựng prompt nền tảng
     system_prompt = build_coding_system_prompt()
+    workspace_root = _get_workspace_root()
 
-    # 3. Tạo Deep Agent thông qua API cấp cao
-    # create_deep_agent tự động gắn kèm các middleware quản lý context và tool loop
+    # Backend trỏ đúng workspace root, virtual_mode=False để
+    # ls/glob/grep thao tác trên ổ đĩa thật
+    backend = FilesystemBackend(root_dir=workspace_root, virtual_mode=False)
+
     agent: CompiledStateGraph = create_deep_agent(
         model=llm,
-        tools=initial_tools,
+        tools=[*initial_tools, *file_tools, edit],
         system_prompt=system_prompt,
+        backend=backend,
     )
-
     return agent
+
+
+# Đăng ký profile loại bỏ built-in file tools cho mọi provider.
+# Phải chạy TRƯỚC create_deep_agent() — module-level đảm bảo điều này.
+for _provider in ("openai", "anthropic", "google_genai", "deepseek"):
+    register_harness_profile(
+        _provider,
+        HarnessProfile(excluded_tools=_EXCLUDED_BUILTINS),
+    )

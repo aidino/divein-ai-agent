@@ -490,6 +490,7 @@ Port rút gọn của crates/pi-edit/src/store.rs (một instance dùng chung c�
 
 from __future__ import annotations
 
+import copy
 import threading
 from dataclasses import dataclass, field
 from typing import Optional
@@ -557,12 +558,16 @@ class EditStore:
             return tag
 
     def by_hash(self, path: str, tag: str) -> Optional[Snapshot]:
-        """Phiên bản gần nhất khớp tag (không phân biệt hoa thường)."""
+        """Phiên bản gần nhất khớp tag (không phân biệt hoa thường).
+
+        Trả về BẢN SAO — store.rs:263 `.map(|v| v.snapshot.clone())`;
+        caller mutate snapshot trả về không phá trạng thái nội bộ.
+        """
         with self._lock:
             self._touch(path)
             for snap in self._histories.get(path, []):
                 if snap.hash.upper() == tag.upper():
-                    return snap
+                    return copy.deepcopy(snap)
         return None
 
     def by_content(self, path: str, text: str) -> Optional[Snapshot]:
@@ -571,7 +576,7 @@ class EditStore:
             self._touch(path)
             for snap in self._histories.get(path, []):
                 if snap.text == text:
-                    return snap
+                    return copy.deepcopy(snap)
         return None
 
     def record_seen_lines(self, path: str, tag: str, lines: list[int]) -> None:
@@ -612,14 +617,27 @@ class EditStore:
     # ---------- clipboard ----------
 
     def start_clipboard_batch(self) -> Clipboard:
-        """Bắt đầu một batch với các register có tên đã lưu. ← port EditStore::start_clipboard_batch"""
+        """Bắt đầu một batch với các register có tên đã lưu. ← port EditStore::start_clipboard_batch
+
+        Rust clone sâu (Clipboard::start_batch: `named: source.named.clone()`);
+        Python phải copy từng list giá trị — `dict(...)` chỉ copy vỏ ngoài.
+        """
         with self._lock:
-            return Clipboard(anon=[], named=dict(self._clipboard_named))
+            return Clipboard(
+                anon=[],
+                named={name: list(lines) for name, lines in self._clipboard_named.items()},
+            )
 
     def commit_clipboard(self, batch: Clipboard) -> None:
-        """Công bố register có tên sau khi batch thành công. ← port commit_clipboard"""
+        """Công bố register có tên sau khi batch thành công. ← port commit_clipboard
+
+        commit_from bên Rust cũng clone (`extend(named.clone())`) — batch đã
+        công bố tách rời khỏi register trong store.
+        """
         with self._lock:
-            self._clipboard_named.update(batch.named)
+            self._clipboard_named.update(
+                {name: list(lines) for name, lines in batch.named.items()}
+            )
 
     # ---------- no-op guard ----------
 
@@ -2750,9 +2768,9 @@ destination section (same input, different `[PATH#TAG]` headers).
 </example>"""
 
 
-@tool
+@tool(description=HASHLINE_DESCRIPTION)
 def edit(input: str) -> str:
-    """HASHLINE_DESCRIPTION_PLACEHOLDER"""
+    """Edit existing files using line-anchored hunks. New files: use `write`."""
     workspace = get_workspace()
     store = get_store()
 
@@ -3016,6 +3034,28 @@ def test_apply_edits_bucket_order_stability() -> None:
     new_text, first, _ = apply_edits("x\ny\nz\n", parsed.edits)
     assert new_text == "A\ny\nC\n"
     assert first == 1
+
+
+def test_store_returns_copies_not_internal_state() -> None:
+    """store.rs:263 trả `.snapshot.clone()` — port Python phải deepcopy:
+    caller mutate snapshot trả về không được phá seen_lines trong store.
+    """
+    store, tag = _store_with("a.py", "x\n", [1])
+    snap = store.by_hash("a.py", tag)
+    snap.seen_lines.add(999)  # mutate bản trả về
+    assert store.by_hash("a.py", tag).seen_lines == {1}
+
+
+def test_clipboard_named_register_is_deep_copied() -> None:
+    """Clipboard::start_batch bên Rust clone sâu (`named.clone()`) — dict()
+    của Python chỉ copy vỏ: phải copy từng list giá trị.
+    """
+    store = EditStore()
+    batch = store.start_clipboard_batch()
+    batch.named["reg"] = ["v1"]
+    store.commit_clipboard(batch)
+    batch.named["reg"].append("mutated-after-commit")  # sửa ngoài batch
+    assert store.start_clipboard_batch().named["reg"] == ["v1"]
 ```
 
 Chạy:
