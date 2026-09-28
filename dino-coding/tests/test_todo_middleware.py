@@ -1,4 +1,3 @@
-import pytest
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, ToolMessage
 from langchain.agents.middleware.types import ModelRequest, ModelResponse
 
@@ -150,7 +149,7 @@ def test_wrap_model_call_injects_nudge_when_threshold_reached():
         captured_request = req
         return ModelResponse(result=[AIMessage(content="done")])
 
-    response = middleware.wrap_model_call(request, dummy_handler)
+    middleware.wrap_model_call(request, dummy_handler)
 
     assert captured_request is not None
     # SystemMessage nudge should be injected into request.messages
@@ -175,7 +174,7 @@ def test_wrap_model_call_deduplicates_tool_calls_across_turns():
         {"name": "write", "args": {}, "id": "call_2"},
     ]
     resp1_ai_msg = AIMessage(content="", tool_calls=tool_calls, id="ai_turn_1")
-    resp1 = middleware.wrap_model_call(
+    middleware.wrap_model_call(
         req1, lambda r: ModelResponse(result=[resp1_ai_msg])
     )
     assert middleware.consecutive_mutations == 2
@@ -190,7 +189,7 @@ def test_wrap_model_call_deduplicates_tool_calls_across_turns():
             ToolMessage(content="ok", tool_call_id="call_2"),
         ],
     )
-    resp2 = middleware.wrap_model_call(
+    middleware.wrap_model_call(
         req2, lambda r: ModelResponse(result=[AIMessage(content="done")])
     )
     # The mutations should NOT have been counted again; consecutive_mutations stays at 2
