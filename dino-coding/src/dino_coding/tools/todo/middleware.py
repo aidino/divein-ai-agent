@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any, Callable, Optional, Sequence
 from langchain.agents.middleware.types import AgentMiddleware, ModelRequest, ModelResponse
-from langchain_core.messages import AIMessage, SystemMessage, BaseMessage
+from langchain_core.messages import AIMessage, SystemMessage
 from langchain_core.tools import BaseTool
 
 from dino_coding.tools.todo.tracker import TodoTracker

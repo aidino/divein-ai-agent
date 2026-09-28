@@ -1,5 +1,4 @@
-import pytest
-from dino_coding.tools.todo.types import TodoParams, InitPhaseInput, TodoPhase, TodoItem
+from dino_coding.tools.todo.types import TodoParams, InitPhaseInput
 from dino_coding.tools.todo.engine import apply_ops, format_summary
 
 

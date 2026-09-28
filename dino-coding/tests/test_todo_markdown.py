@@ -1,4 +1,3 @@
-import pytest
 from dino_coding.tools.todo.markdown import (
     MARKER_TO_STATUS,
     STATUS_TO_MARKER,

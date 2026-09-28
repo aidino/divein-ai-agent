@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from typing import Optional
 from dino_coding.tools.todo.engine import apply_ops, clone_phases, format_summary
 from dino_coding.tools.todo.markdown import markdown_to_phases, phases_to_markdown
 from dino_coding.tools.todo.types import TodoParams, TodoPhase
