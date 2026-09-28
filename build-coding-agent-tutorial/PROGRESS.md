@@ -22,7 +22,7 @@
 |:---:|:---|:---|:---:|:---:|:---|
 | **00** | **Design Architecture V3.1** | [`00_design_report.md`](00_design_report.md) | ✅ Hoàn thành | ✅ Đã duyệt | Bản đặc tả kiến trúc chuẩn, phân loại Reuse vs Porting. |
 | **01** | **Hello Harness & Context Core**<br>*(từ `agent-loop.ts`, `append-only-context.ts`)* | [`phase_01_hello_agent.md`](phase_01_hello_agent.md) | ✅ Hoàn thành | ✅ **Đã hoàn thành** | Khởi tạo Deep Agent, quản lý tin nhắn Append-Only, stream token v3 qua Rich CLI. |
-| **02** | **Robust VFS & Hashline Editing**<br>*(từ `crates/pi-edit`, `read-summary.ts`)* | `phase_02_file_operations.md` | 🟡 **Chuẩn bị biên soạn** | ⏳ Chờ hướng dẫn | Porting engine mỏ neo dòng/hash từ Rust sang Python; Smart Read phân trang & tóm tắt. |
+| **02** | **Robust VFS & Hashline Editing**<br>*(từ `crates/pi-edit`, `read-summary.ts`)* | [`phase_02_file_operations.md`](phase_02_file_operations.md) | ✅ Hoàn thành | 🟡 **Đang học** | Porting engine mỏ neo dòng/hash từ Rust sang Python; Smart Read phân trang & tóm tắt. Code mẫu đã kiểm chứng 11/11 unit test + E2E (read→edit→stale-guard→CRLF). |
 | **02.5**| **Codebase Intelligence với ast-grep**<br>*(từ `ast-grep.ts`, `ast-edit.ts`)* | `phase_025_codebase_intelligence.md` | ⏳ Chờ Phase 2 | ⚪ Chưa bắt đầu | Tích hợp `ast-grep` (`sg`) / `ast-grep-py` để search và refactor code theo cú pháp AST. (Bỏ LightRAG). |
 | **03** | **Cognitive Anchor: Task & Plan**<br>*(từ `todo.ts`, `compaction.ts`)* | `phase_03_task_planning.md` | ⏳ Chờ | ⚪ Chưa bắt đầu | `TodoListMiddleware` phân cấp + `SummarizationMiddleware` tự nén ngữ cảnh khi đạt 85% token window. |
 | **04** | **Execution Engine & Loopback Bridge**<br>*(từ `eval.ts`, `src/eval/py/runner.py`)* | `phase_04_code_execution.md` | ⏳ Chờ | ⚪ Chưa bắt đầu | Persistent Python REPL chạy ngầm (NDJSON) có IPC loopback cho phép script test gọi lại tool Agent. |
@@ -54,6 +54,10 @@
 | **28/09/2026** | **Quyết định 8**: Loại bỏ rò rỉ ngữ cảnh bài học (Tutorial Meta-Leakage) trong `src/prompt.py`. | Xóa câu "Hiện tại bạn đang ở Phase 1...", thay bằng 3 trụ cột kỹ thuật phần mềm chuẩn mực từ `oh-my-pi` (Engineering Rules, Tool Discipline, Completeness Contract). | ✅ Đã áp dụng |
 | **28/09/2026** | **Quyết định 9**: Chuẩn hóa kiến trúc gói theo `src-layout` (`src/dino_coding/`) và cấu hình `[project.scripts] dino-coding`. | Cập nhật cấu trúc thư mục, code mẫu và lệnh gọi trực tiếp `uv run dino-coding` trong `phase_01_hello_agent.md`. | ✅ Đã áp dụng |
 | **28/09/2026** | **Quyết định 10**: Hiển thị trực quan Tool Call và Tool Result trên CLI (khắc phục điểm mù tool execution). | Cập nhật `src/dino_coding/main.py` để bóc tách `AIMessage(tool_calls)` và `ToolMessage(content)` từ state messages, giúp người dùng quan sát minh bạch toàn bộ quá trình Agent gọi công cụ. | ✅ Đã áp dụng |
+| **28/09/2026** | **Quyết định 11**: Đặt engine port trong package con `src/dino_coding/tools/hashline/` phản chiếu 1-1 cấu trúc crate `pi-edit` (text/types/store/messages/tokenizer/input/parser/apply/patcher), còn `tools/editor.py` chỉ là tool wrapper (tương đương `EditTool` của omp). | Áp dụng trong `phase_02_file_operations.md` mục 2 & 4; người học đối chiếu từng file Python với file Rust tương ứng khi debug. | ✅ Đã áp dụng |
+| **28/09/2026** | **Quyết định 12**: Phân cấp phạm vi porting Phase 2 — Port 100% (file_hash xxh32, EditStore snapshot/clipboard/no-op, tokenizer/parser PUT-CUT-REM-MV + `@register`, materialize, seen-lines guard, mismatch diagnostics, path policy); Điều chỉnh (read tool dùng JSON args `path/offset/limit` thay selector inline, outline summary heuristic regex thay tree-sitter, preview `±N|` qua difflib); Defer (block ops `N*` trả lỗi `BLOCK_RESOLVER_UNAVAILABLE` trung thực như omp khi thiếu resolver, boundary/landing repair, streaming preview, fuzzy recovery). | Bảng phân loại chi tiết ở mục 1.3 của `phase_02_file_operations.md`; các mục defer ghi rõ điều kiện nâng cấp ở mục 8 (block resolver sẽ tái sử dụng ast-grep ở Phase 2.5). | ✅ Đã áp dụng |
+| **28/09/2026** | **Quyết định 13**: Toàn bộ chuỗi model-facing (tool description, error, warning) giữ nguyên tiếng Anh chuẩn oh-my-pi vì các model được huấn luyện trên chuỗi gốc; tiếng Việt chỉ dùng cho prose tutorial và CLI hiển thị. | Code mẫu trong `phase_02_file_operations.md` (module `messages.py` port nguyên văn `messages.rs` + `mismatch.rs`). | ✅ Đã áp dụng |
+| **28/09/2026** | **Quyết định 14**: Kiểm chứng code mẫu tutorial bằng thực thi thật trước khi bàn giao: trích 14 module + 11 unit test từ tài liệu, chạy bằng venv của dự án → 11/11 pass, E2E read→edit→tag-chaining→stale-reject→unseen-guard→CRLF-restore đều đúng; phát hiện và sửa 4 lỗi trong bản nháp (thiếu import `target_register`, rich markup nuốt header `[path#TAG]`, universal newlines phá detect CRLF, block code markdown bị fence nội bộ cắt sớm → đổi sang fence 4-backtick). | Quy chuẩn mới: mọi phase sau biên soạn xong phải qua vòng "extract & run" tương tự trước khi giao. | ✅ Đã áp dụng |
 
 ---
 
@@ -69,10 +73,12 @@
 
 ---
 
-## 🎯 Sprint Tiếp theo: Phase 2 — Robust VFS & Hashline Editing
+## 🎯 Sprint Hiện tại: Phase 2 — Robust VFS & Hashline Editing (🟡 Đang học)
 
-* **Tài liệu hướng dẫn**: `phase_02_file_operations.md` (chuẩn bị biên soạn).
+* **Tài liệu hướng dẫn**: [`phase_02_file_operations.md`](phase_02_file_operations.md) — ✅ đã biên soạn và kiểm chứng code mẫu (11/11 unit test + E2E read→edit→guard).
 * **Mục tiêu kỹ thuật**:
-  1. **Porting Hashline Editing Engine**: Chuyển giao giải pháp mỏ neo dòng/hash từ Rust (`crates/pi-edit`) sang Python (`src/dino_coding/tools/editor.py`), giải quyết triệt để lỗi hallucinatory line number và collision khi sửa code.
-  2. **Smart Read Tool**: Xây dựng công cụ đọc file thông minh có phân trang (pagination) và tóm tắt tệp lớn (lấy cảm hứng từ `read-summary.ts` của `oh-my-pi`).
-  3. **Tích hợp vào Agent**: Nối các tool thao tác tệp vào Deep Agents và kiểm thử sửa file thực tế.
+  1. **Porting Hashline Editing Engine**: Chuyển giao giải pháp mỏ neo dòng/hash từ Rust (`crates/pi-edit`) sang Python (`src/dino_coding/tools/hashline/` + `tools/editor.py`), giải quyết triệt để lỗi hallucinatory line number và stale-edit khi sửa code.
+  2. **Smart Read Tool**: Công cụ đọc file thông minh có phân trang (`offset`/`limit`), header snapshot `[path#TAG]`, dòng `N:TEXT` và outline summary heuristic cho file lớn (lấy cảm hứng từ `read-summary.ts`).
+  3. **Tích hợp vào Agent**: Nối `read`/`write`/`edit` vào `create_deep_agent`, cập nhật System Prompt (không meta-leakage) và kiểm thử 3 kịch bản terminal `uv run dino-coding` (Smart Read mint tag → Edit chuẩn → Stale tag self-healing).
+* **Lộ trình tự học trong tài liệu**: Lý thuyết 3 bệnh của `str_replace` → dựng 13 module nhỏ (mỗi module gắn file Rust gốc để đối chiếu) → `uv run pytest tests/ -q` (11 test) → 3 kịch bản terminal → checklist nghiệm thu 11 mục.
+* **Điểm mới so với kế hoạch ban đầu**: thêm `tools/hashline/diffpreview.py` (preview nén `±N|` bằng difflib) và bộ unit test engine chạy trước khi gặp LLM (Quyết định 14).

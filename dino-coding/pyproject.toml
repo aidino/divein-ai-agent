@@ -21,3 +21,8 @@ dino-coding = "dino_coding.main:run_interactive_session"
 
 [tool.uv]
 package = true
+
+[dependency-groups]
+dev = [
+    "pytest>=9.1.1",
+]
