@@ -27,9 +27,10 @@ console = Console()
 
 MAX_AST_FILES = 1000   # ← ast-edit.ts $envpos("PI_MAX_AST_FILES", 1000)
 PARSE_ERROR_CAP = 3    # ← capParseErrors: in 3 lỗi đầu, đếm phần còn lại
-_LAST_PREVIEW: dict[tuple, tuple[dict[str, int], int]] = {}
-# Preview gần nhất theo (rules, paths) — pha apply so với CHÍNH preview mà
-# model đã xem, thay cho closure queueResolveHandler của omp (resolve.ts).
+_LAST_PREVIEW: dict[tuple, tuple[dict[str, int], int, dict[str, str]]] = {}
+# Preview gần nhất theo (rules, paths): (counts, tổng thay đổi, {rel → content tag}).
+# Pha apply so với CHÍNH preview mà model đã xem — thay closure queueResolveHandler
+# của omp (resolve.ts). Chiều thứ 3 (content tag) bắt file đổi ngoài vùng match.
 
 AST_GREP_DESCRIPTION = """Structural code search via ast-grep. Use when syntax shape matters more than text (calls, declarations, language constructs).
 
@@ -91,16 +92,14 @@ def _split_targets(path_param: str) -> list[str]:
     return parts or ["."]
 
 
-@tool
+@tool(description=AST_GREP_DESCRIPTION)
 def ast_grep(
     pat: str,
     path: str = ".",
     lang: Optional[str] = None,
     skip: int = 0,
 ) -> str:
-    """Structural code search via ast-grep. Use when syntax shape matters
-    more than text (calls, declarations, language constructs).
-    """
+    """Structural code search via ast-grep."""
     workspace = get_workspace()
     store = get_store()
 
@@ -192,11 +191,9 @@ def ast_grep(
     return "\n".join(output)
 
 
-@tool
+@tool(description=AST_EDIT_DESCRIPTION)
 def ast_edit(ops: list[dict], paths: list[str], apply: bool = False) -> str:
-    """Structural AST-aware rewrites via ast-grep. Use for codemods where
-    text replace is unsafe. Runs as a dry-run preview unless apply=true.
-    """
+    """Structural AST-aware rewrites via ast-grep."""
     workspace = get_workspace()
     store = get_store()
 
