@@ -244,7 +244,11 @@ Không module nào trong đây được chạm filesystem.
 
 from __future__ import annotations
 
-BOM = "﻿"
+# Escape tường minh như omp: `pub const BOM: &str = "\u{FEFF}";`
+# KHÔNG gõ ký tự \ufeff literal — nó vô hình, linter/formatter có thể xóa mất
+# và biến BOM thành chuỗi rỗng (khi đó startswith("") luôn True, strip_bom
+# sẽ cắt ký tự đầu của MỌI file một cách âm thầm).
+BOM = "\ufeff"
 
 
 def strip_bom(content: str) -> str:
@@ -1221,6 +1225,7 @@ from typing import Optional
 
 from dino_coding.tools.hashline import messages
 from dino_coding.tools.hashline.parser import parse_patch
+from dino_coding.tools.hashline.text import BOM
 from dino_coding.tools.hashline.tokenizer import parse_header
 from dino_coding.tools.hashline.types import FileOp, Parsed
 
@@ -1345,7 +1350,7 @@ def _parse_header_line(line: str) -> Optional[PatchSection]:
 
 def split_patch(input_text: str) -> Patch:
     """Tách sections. ← port input::Patch::parse + split_raw_sections"""
-    text = input_text.lstrip("﻿").rstrip("\n")
+    text = input_text.lstrip(BOM).rstrip("\n")
     lines = [ln.rstrip("\r") for ln in text.split("\n")]
     while lines and (not lines[0].strip() or lines[0].strip() == "*** Begin Patch"):
         lines.pop(0)
