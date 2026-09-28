@@ -244,6 +244,10 @@ Không module nào trong đây được chạm filesystem.
 
 from __future__ import annotations
 
+import re
+
+import xxhash
+
 # Escape tường minh như omp: `pub const BOM: &str = "\u{FEFF}";`
 # KHÔNG gõ ký tự \ufeff literal — nó vô hình, linter/formatter có thể xóa mất
 # và biến BOM thành chuỗi rỗng (khi đó startswith("") luôn True, strip_bom
@@ -261,6 +265,11 @@ def normalize_to_lf(text: str) -> str:
     return text.replace("\r\n", "\n").replace("\r", "\n")
 
 
+# Regex compile MỘT LẦN ở mức module — mô phỏng `static XXX_RE: LazyLock<Regex>`
+# của omp; tránh khởi tạo lại object pattern qua mỗi lần gọi hàm.
+_SEEN_PREFIX_RE = re.compile(r"^[ *]?(\d+)(?:-(\d+))?:")
+
+
 class LineEnding:
     """Phát hiện và khôi phục kiểu xuống dòng. ← port text::detect_line_ending"""
 
@@ -276,7 +285,14 @@ class LineEnding:
 
     @staticmethod
     def restore(text: str, ending: str) -> str:
-        """Nội dung engine luôn là LF; ghi đĩa theo kiểu dòng gốc của file."""
+        """Ghi đĩa theo kiểu dòng gốc của file. ← port text::restore_line_endings
+
+        omp giữ bất biến "text đầu vào luôn LF" bằng kiến trúc crate; Python
+        không có cơ chế nào giữ giúp nên ta chủ động normalize bên trong —
+        caller vô tình truyền text còn \r\n sẽ không bị nhân đôi thành \r\r\n.
+        Chi phí 1 pass, chỉ trả lời đúng trong mọi tình huống (hàm total).
+        """
+        text = normalize_to_lf(text)
         if ending == LineEnding.CRLF:
             return text.replace("\n", "\r\n")
         return text
@@ -294,7 +310,6 @@ def file_hash(text: str) -> str:
     Ví dụ: "def f():\\n    return 1\\n" và "def f():\\n    return 1   \\n"
     cho cùng một tag.
     """
-    import xxhash
 
     normalized = "\n".join(line.rstrip(" \t\r") for line in text.split("\n"))
     digest = xxhash.xxh32(normalized.encode("utf-8")).intdigest()
@@ -303,7 +318,6 @@ def file_hash(text: str) -> str:
 
 def payload_hash(text: str) -> int:
     """Khóa 64-bit ổn định cho patch input thô — dùng chống vòng lặp no-op. ← port store::payload_hash"""
-    import xxhash
 
     return xxhash.xxh64(text.encode("utf-8")).intdigest()
 
@@ -314,9 +328,7 @@ def seen_lines_from_body(body: str) -> list[int]:
     Mỗi dòng khớp `^[ *]?(\\d+)(-(\\d+))?:` đóng góp endpoint(s) của nó.
     Dòng `5-12:...` đóng góp cả 5 và 12 (guard cần biên, không cần từng dòng giữa).
     """
-    import re
-
-    prefix = re.compile(r"^[ *]?(\d+)(?:-(\d+))?:")
+    prefix = _SEEN_PREFIX_RE
     seen: list[int] = []
     for row in body.split("\n"):
         match = prefix.match(row)
@@ -1227,12 +1239,17 @@ from dino_coding.tools.hashline import messages
 from dino_coding.tools.hashline.parser import parse_patch
 from dino_coding.tools.hashline.text import BOM
 from dino_coding.tools.hashline.tokenizer import parse_header
-from dino_coding.tools.hashline.types import FileOp, Parsed
+from dino_coding.tools.hashline.types import (
+    EditCut, EditDelete, EditInsert, EditPaste, FileOp, Parsed,
+)
 
 # Noise kiểu apply_patch: `*** Update File:`, `*** Move to:`... ← port APPLY_PATCH_PATH_NOISE_RE
 PATH_NOISE_RE = re.compile(
     r"(?i)^\*{0,3}\s*(?:(?:update|add|delete|move)[^A-Za-z0-9]*(?:file|to)?[^A-Za-z0-9]*:)?\s*\*{0,3}\s*"
 )
+
+# ← port input.rs RECOVERY_TAG_RE (static LazyLock<Regex> của omp)
+RECOVERY_TAG_RE = re.compile(r"#([0-9A-Fa-f]{4})\s*$")
 
 
 @dataclass
@@ -1272,9 +1289,6 @@ class PatchSection:
         Không có (chỉ head/tail insert) → tag lệch vẫn cho phép apply (vì
         không có mỏ neo nào có thể sai).
         """
-        from dino_coding.tools.hashline.types import (
-            EditCut, EditDelete, EditPaste, EditInsert,
-        )
         for edit in self.edits():
             if isinstance(edit, (EditDelete, EditCut)):
                 return True
@@ -1286,9 +1300,6 @@ class PatchSection:
 
     def collect_anchor_lines(self) -> list[int]:
         """Mọi dòng mỏ neo, tăng dần, không trùng. ← port PatchSection::collect_anchor_lines"""
-        from dino_coding.tools.hashline.types import (
-            EditCut, EditDelete, EditPaste, EditInsert,
-        )
         lines: list[int] = []
         for edit in self.edits():
             if isinstance(edit, EditDelete):
@@ -1336,7 +1347,7 @@ def _parse_header_line(line: str) -> Optional[PatchSection]:
     # Phục hồi nhẹ: `[src/a.py #ABCD]` (space trước #) hoặc path có noise
     if stripped.startswith("[") and stripped.endswith("]"):
         body = PATH_NOISE_RE.sub("", stripped[1:-1].strip()).strip()
-        tag_match = re.search(r"#([0-9A-Fa-f]{4})\s*$", body)
+        tag_match = RECOVERY_TAG_RE.search(body)
         if tag_match:
             path_text = body[: tag_match.start()].strip()
             if path_text and "#" not in path_text:
@@ -2147,7 +2158,9 @@ from dino_coding.tools.hashline.apply import apply_edits
 from dino_coding.tools.hashline.diffpreview import compact_preview
 from dino_coding.tools.hashline.input import Patch, PatchSection
 from dino_coding.tools.hashline.store import Clipboard, EditStore
-from dino_coding.tools.hashline.text import file_hash, payload_hash
+from dino_coding.tools.hashline.text import (
+    LineEnding, file_hash, normalize_to_lf, payload_hash, strip_bom,
+)
 from dino_coding.tools.hashline.types import EditBlock
 
 if TYPE_CHECKING:
@@ -2193,7 +2206,6 @@ def _reject(message: str) -> EditRejected:
 
 
 def read_target(display_path: str, absolute_path: str) -> FileRead:
-    from dino_coding.tools.hashline.text import LineEnding, normalize_to_lf, strip_bom
 
     # newline="" tắt universal newlines: giữ nguyên \r\n để detect() đo đúng kiểu dòng
     with open(absolute_path, "r", encoding="utf-8", errors="strict", newline="") as handle:
@@ -2399,6 +2411,8 @@ from __future__ import annotations
 
 import os
 
+from dino_coding.tools.hashline.store import EditStore
+
 
 class PathOutsideWorkspace(ValueError):
     """Model cố truy cập ngoài workspace root."""
@@ -2445,7 +2459,6 @@ def get_workspace() -> WorkspacePolicy:
 def get_store():
     """Singleton EditStore dùng chung bởi read/write/edit."""
     global _STORE
-    from dino_coding.tools.hashline.store import EditStore
 
     if _STORE is None:
         _STORE = EditStore()
@@ -2681,9 +2694,10 @@ import shutil
 from langchain_core.tools import tool
 from rich.console import Console
 
+from dino_coding.tools.hashline import messages
 from dino_coding.tools.hashline.input import split_patch
 from dino_coding.tools.hashline.patcher import StagedFile, stage_patch
-from dino_coding.tools.hashline.text import LineEnding
+from dino_coding.tools.hashline.text import LineEnding, normalize_to_lf
 from dino_coding.tools.workspace import get_store, get_workspace
 
 console = Console()
@@ -2754,7 +2768,6 @@ def edit(input: str) -> str:
 
 def _commit(item: StagedFile, store, workspace) -> str:
     """Ghi một StagedFile xuống đĩa + mint tag mới + carry seen-lines."""
-    from dino_coding.tools.hashline.text import normalize_to_lf
 
     canonical = workspace.canonical_key(item.absolute_path)
 
@@ -2786,7 +2799,6 @@ def _commit(item: StagedFile, store, workspace) -> str:
     header = f"[{item.display_path}#{tag}]"
     lines = [header]
     if item.op == "noop":
-        from dino_coding.tools.hashline import messages
 
         lines.append(messages.no_change_diagnostic(item.display_path))
     if item.diff_preview:
@@ -2883,6 +2895,7 @@ import pytest
 
 from dino_coding.tools.hashline.apply import apply_edits
 from dino_coding.tools.hashline.input import split_patch
+from dino_coding.tools.hashline.parser import parse_patch
 from dino_coding.tools.hashline.patcher import EditRejected, stage_patch
 from dino_coding.tools.hashline.store import EditStore
 from dino_coding.tools.hashline.text import file_hash, seen_lines_from_body
@@ -2991,7 +3004,6 @@ def test_rem_and_mv(tmp_path) -> None:
 
 
 def test_apply_edits_bucket_order_stability() -> None:
-    from dino_coding.tools.hashline.parser import parse_patch
 
     parsed = parse_patch("PUT 1.=1:\n+A\nPUT 3.=3:\n+C")
     new_text, first, _ = apply_edits("x\ny\nz\n", parsed.edits)
