@@ -64,6 +64,9 @@ name = "dino-coding"
 version = "0.1.0"
 description = "AI Coding Agent based on DeepAgents and oh-my-pi"
 readme = "README.md"
+authors = [
+    { name = "Dino", email = "ngohongthai.uet@gmail.com" }
+]
 requires-python = ">=3.12"
 dependencies = [
     "deepagents>=0.7.19",
@@ -74,17 +77,23 @@ dependencies = [
     "rich>=15.0.0",
 ]
 
+[project.scripts]
+dino-coding = "dino_coding.main:run_interactive_session"
+
 [tool.uv]
-package = false
+package = true
 ```
 
 > [!TIP]
-> **Tại sao cần `package = false`?**
-> Nếu không có `package = false`, `uv build` hoặc `uv sync` sẽ cố tìm kiếm thư mục gói `src/dino_coding/__init__.py` và báo lỗi `Target directory does not exist: src/dino_coding`. Thiết lập `package = false` báo cho `uv` biết đây là ứng dụng độc lập, `uv` sẽ quản lý venv và cài đặt dependencies nhanh chóng mà không yêu cầu đóng gói wheel.
+> **Quy chuẩn `src-layout` và lệnh chạy tắt `uv run dino-coding`**:
+> Để tạo một công cụ CLI chuyên nghiệp có thể gọi trực tiếp bằng `uv run dino-coding`:
+> 1. Ta áp dụng cấu trúc chuẩn **`src-layout`**: Toàn bộ mã nguồn đặt trong gói con `src/dino_coding/` kèm file `__init__.py`.
+> 2. Khai báo `[project.scripts]` trỏ tới hàm `run_interactive_session` trong `dino_coding.main`.
+> 3. Cấu hình `[tool.uv] package = true`: `uv` sẽ tự động liên kết package vào môi trường ảo theo cơ chế Editable Install, cho phép gõ trực tiếp `uv run dino-coding` từ bất kỳ đâu trong thư mục dự án mà không cần gõ đường dẫn file Python thủ công.
 
 ### Giải thích các thư viện:
 * **`deepagents`**: Bộ khung Agent Harness chuyên biệt cho bài toán kỹ thuật phần mềm phức tạp của LangChain.
-* **`langchain-core`**: Cung cấp các abstractions chuẩn về tin nhắn (`HumanMessage`, `AIMessage`, `SystemMessage`) và công cụ (`@tool`).
+* **`langchain-core`**: Cung cấp các abstractions chuẩn về tin nhắn (`HumanMessage`, `AIMessage`, `ToolMessage`, `SystemMessage`) và công cụ (`@tool`).
 * **`langchain-openai`**: Client giao tiếp chuẩn OpenAI-compatible (dùng được cho cả OpenAI, SiliconFlow/DeepSeek, OpenRouter, Gemini, Z.AI, v.v.).
 * **`pydantic`**: Định nghĩa cấu trúc dữ liệu và kiểm thực (validation).
 * **`rich`**: Thư viện format giao diện dòng lệnh (CLI) đẹp mắt với màu sắc, bảng biểu và spinner.
@@ -93,18 +102,19 @@ package = false
 Tạo cấu trúc thư mục mã nguồn như sau:
 
 ```
-my-coding-agent/
+dino-coding/
 ├── .env                  # Lưu API keys
-├── pyproject.toml
+├── pyproject.toml        # [project.scripts] dino-coding = "dino_coding.main:run_interactive_session"
 └── src/
-    ├── __init__.py
-    ├── config.py         # Cấu hình đa nhà cung cấp model
-    ├── prompt.py         # Bộ dựng System Prompt thích ứng
-    ├── tools/
-    │   ├── __init__.py
-    │   └── base.py       # Custom tool nền tảng
-    ├── agent.py          # Lõi khởi tạo create_deep_agent
-    └── main.py           # Entrypoint CLI tương tác và stream token
+    └── dino_coding/
+        ├── __init__.py
+        ├── config.py         # Cấu hình đa nhà cung cấp model
+        ├── prompt.py         # Bộ dựng System Prompt thích ứng
+        ├── tools/
+        │   ├── __init__.py
+        │   └── base.py       # Custom tool nền tảng
+        ├── agent.py          # Lõi khởi tạo create_deep_agent
+        └── main.py           # Entrypoint CLI tương tác và hiển thị tool execution
 ```
 
 ---
@@ -410,7 +420,7 @@ initial_tools = [get_environment_info, echo_code_analysis]
 
 ---
 
-### 4.5 Module 4: Lõi Agent Harness (`src/agent.py`)
+### 4.5 Module 4: Lõi Agent Harness (`src/dino_coding/agent.py`)
 Sử dụng hàm `create_deep_agent` từ framework `deepagents`. Hàm này tự động bao bọc state management của LangGraph, xử lý tool calling loop và context buffering.
 
 ```python
@@ -418,9 +428,9 @@ Sử dụng hàm `create_deep_agent` từ framework `deepagents`. Hàm này tự
 
 from deepagents import create_deep_agent
 from langgraph.graph.state import CompiledStateGraph
-from src.config import config
-from src.prompt import build_coding_system_prompt
-from src.tools.base import initial_tools
+from dino_coding.config import config
+from dino_coding.prompt import build_coding_system_prompt
+from dino_coding.tools.base import initial_tools
 
 
 def create_my_coding_agent() -> CompiledStateGraph:
@@ -444,8 +454,8 @@ def create_my_coding_agent() -> CompiledStateGraph:
 
 ---
 
-### 4.6 Module 5: Entrypoint CLI Streaming (`src/main.py`)
-Module giao diện dòng lệnh sử dụng `rich` để stream từng token suy luận của Agent ra terminal theo thời gian thực (lấy cảm hứng từ cơ chế streaming sự kiện của `oh-my-pi`).
+### 4.6 Module 5: Entrypoint CLI Streaming & Hiển thị Tool Call (`src/dino_coding/main.py`)
+Module giao diện dòng lệnh sử dụng `rich` để hiển thị tương tác. Điểm mấu chốt học từ `oh-my-pi`: Khi Agent đưa ra quyết định gọi công cụ, hệ thống sinh ra `AIMessage(tool_calls=[...])` và sau đó node thực thi trả về `ToolMessage(content=...)`. Ta duyệt qua các tin nhắn mới sinh để hiển thị chi tiết tên tool, tham số và kết quả phản hồi của tool trước khi in câu trả lời cuối cùng:
 
 ```python
 """Entrypoint chính của Coding Agent CLI."""
@@ -454,8 +464,8 @@ import sys
 from rich.console import Console
 from rich.markdown import Markdown
 from rich.panel import Panel
-from langchain_core.messages import HumanMessage
-from src.agent import create_my_coding_agent
+from langchain_core.messages import HumanMessage, AIMessage, ToolMessage
+from dino_coding.agent import create_my_coding_agent
 
 console = Console()
 
@@ -464,7 +474,7 @@ def run_interactive_session():
     """Khởi chạy phiên làm việc tương tác qua terminal."""
     console.print(
         Panel.fit(
-            "[bold cyan]🤖 My Coding Agent — Phase 1: Hello Harness[/bold cyan]\n"
+            "[bold cyan]🤖 Dino Coding Agent — Phase 1: Hello Harness[/bold cyan]\n"
             "[dim]Gõ 'exit' hoặc 'quit' để thoát.[/dim]",
             border_style="cyan",
         )
@@ -492,21 +502,31 @@ def run_interactive_session():
             # Nối tin nhắn của người dùng vào context
             messages.append(HumanMessage(content=user_input))
 
-            console.print("[bold blue]Agent đang suy nghĩ...[/bold blue]")
+            console.print("[bold blue]Dino Coding Agent đang suy nghĩ...[/bold blue]")
 
-            # Truyền phát sự kiện qua stream_events (LangChain v0.3 / v1.x standard)
-            # Giúp bạn quan sát được cả quá trình LLM gọi tool và trả lời
-            response_chunks = []
-            
             # Chạy agent với state messages hiện tại
             final_state = agent.invoke({"messages": messages})
-            
-            # Lấy tin nhắn phản hồi cuối cùng của Agent
-            ai_message = final_state["messages"][-1]
+
+            # Xác định các tin nhắn mới sinh ra trong lượt hội thoại này
+            new_messages = final_state["messages"][len(messages):]
             messages = final_state["messages"]
 
-            # Hiển thị kết quả bằng Markdown format đẹp mắt
-            console.print("\n[bold magenta]Antigravity Agent:[/bold magenta]")
+            # Hiển thị các bước trung gian (Tool Calls & Tool Results)
+            for msg in new_messages[:-1]:
+                if isinstance(msg, AIMessage) and getattr(msg, "tool_calls", None):
+                    for tool_call in msg.tool_calls:
+                        tool_name = tool_call.get("name", "unknown")
+                        tool_args = tool_call.get("args", {})
+                        args_str = f"({tool_args})" if tool_args else "()"
+                        console.print(
+                            f"[bold yellow]⚙️  Tool Call:[/bold yellow] [bold cyan]{tool_name}[/bold cyan] [dim]{args_str}[/dim]"
+                        )
+                elif isinstance(msg, ToolMessage):
+                    console.print(f"[bold green]↳ Tool Result:[/bold green] [dim]{msg.content}[/dim]\n")
+
+            # Lấy và hiển thị tin nhắn phản hồi cuối cùng của Agent
+            ai_message = new_messages[-1]
+            console.print("\n[bold magenta]Dino Coding Agent:[/bold magenta]")
             console.print(Markdown(str(ai_message.content)))
 
         except KeyboardInterrupt:
@@ -528,37 +548,33 @@ Sau khi bạn đã tự gõ các module trên vào thư mục dự án của mì
 ### Bước 1: Kiểm tra cấu hình môi trường
 Đảm bảo file `.env` đã có API key hợp lệ:
 ```bash
-uv run python -c "from src.config import config; print('Provider hợp lệ:', config.provider)"
+uv run python -c "from dino_coding.config import config; print('Provider hợp lệ:', config.provider)"
 ```
 
 ### Bước 2: Chạy thử tương tác CLI
-Khởi động agent trực tiếp bằng Python:
+Khởi động Agent trực tiếp bằng lệnh rút gọn đã cấu hình trong `[project.scripts]`:
 ```bash
-uv run python src/main.py
+uv run dino-coding
 ```
 
 > [!NOTE]
-> **Về việc chạy ứng dụng với `package = false`**:  
-> Vì `pyproject.toml` đã cấu hình `[tool.uv] package = false`, toàn bộ môi trường venv và dependencies được quản lý tự động mà không cần đóng gói wheel phức tạp. Bạn chỉ cần chạy trực tiếp qua `uv`:
-> ```bash
-> uv run python src/main.py
-> ```
-> *(Không cần cấu hình `[project.scripts]` vì `uv` không cài đặt project làm package trong site-packages, giúp tránh hoàn toàn các lỗi `Target directory does not exist: src/dino_coding`).*
+> Nhờ cấu hình `[project.scripts] dino-coding = "dino_coding.main:run_interactive_session"` và `[tool.uv] package = true`, `uv` kích hoạt trực tiếp hàm `run_interactive_session` mà không cần gọi đường dẫn file dài.
 
-### Bước 3: Thử nghiệm kịch bản gọi Tool tự động
+### Bước 3: Thử nghiệm kịch bản gọi Tool tự động & Quan sát Tool Call
+
 Trong phiên hội thoại, hãy nhập các câu hỏi sau để kiểm tra xem Agent có tự giác gọi Tool khi cần hay không:
 
 1. **Test kiểm tra thông tin môi trường (Tool Calling)**:
    > *Bạn*: "Hãy kiểm tra xem môi trường hiện tại đang chạy trên hệ điều hành nào và phiên bản Python mấy?"  
-   > *Kỳ vọng*: Agent không đoán mò mà sẽ tự động gọi tool `get_environment_info` và trả về thông số OS chính xác.
+   > *Kỳ vọng*: CLI in dòng `⚙️ Tool Call: get_environment_info()` và `↳ Tool Result: OS: ...`, sau đó Agent tổng hợp kết quả chính xác về OS và đường dẫn Python.
 
-2. **Test phân tích mã nguồn**:
+2. **Test phân tích mã nguồn (Tool Calling có tham số)**:
    > *Bạn*: "Hãy phân tích đoạn code sau xem có bao nhiêu dòng: `def add(a, b):\n    return a + b`"  
-   > *Kỳ vọng*: Agent kích hoạt tool `echo_code_analysis` và báo kết quả 2 dòng.
+   > *Kỳ vọng*: CLI in dòng `⚙️ Tool Call: echo_code_analysis({'code_snippet': ...})` và `↳ Tool Result: Phân tích hoàn tất: 2 dòng mã, 31 ký tự.`, sau đó Agent trả về câu trả lời phân tích.
 
 3. **Test trí nhớ ngữ cảnh (Append-Only Context)**:
    > *Bạn*: "Tôi vừa nhờ bạn phân tích đoạn code làm nhiệm vụ gì ở trên?"  
-   > *Kỳ vọng*: Agent nhớ được ngữ cảnh câu lệnh trước đó nhờ mảng `messages` được bảo tồn.
+   > *Kỳ vọng*: Agent nhớ được nội dung cuộc hội thoại trước đó nhờ danh sách `messages` được lưu trữ dạng Append-Only.
 
 ---
 
@@ -566,11 +582,11 @@ Trong phiên hội thoại, hãy nhập các câu hỏi sau để kiểm tra xem
 
 Trước khi chuyển sang Phase 2, bạn hãy tự tích vào các tiêu chí kiểm tra sau:
 
-- [ ] Lệnh `uv init` và cài đặt các dependencies thành công, không gặp xung đột phiên bản.
-- [ ] File `.env` nạp thành công API key của Provider (SiliconFlow hoặc OpenAI).
-- [ ] `AppConfig` trong `src/config.py` trả về đúng đối tượng ChatModel có cờ `streaming=True`.
-- [ ] Agent tự giác gọi tool `get_environment_info` khi được hỏi về hệ điều hành mà không cần ép buộc.
-- [ ] Giao diện CLI hiển thị định dạng Markdown màu sắc đẹp mắt qua thư viện `rich`.
+- [ ] Dự án được cấu trúc theo chuẩn `src/dino_coding/` và chạy thành công qua `uv run dino-coding`.
+- [ ] File `.env` nạp thành công API key của Provider (`zai`, `deepseek`, `openai`, v.v.).
+- [ ] `AppConfig` trong `src/dino_coding/config.py` trả về đúng đối tượng ChatModel có cờ `streaming=True` và kiểm tra Type-check (Pyright) 0 errors.
+- [ ] Agent tự giác gọi tool `get_environment_info` và `echo_code_analysis` khi cần dữ liệu thực tế.
+- [ ] Giao diện CLI hiển thị sự kiện `⚙️ Tool Call` và `↳ Tool Result` rõ ràng trước khi in câu trả lời cuối cùng.
 - [ ] Bạn đã hiểu tại sao cần giữ lịch sử hội thoại dạng Append-Only thay vì ghi đè.
 
 ---

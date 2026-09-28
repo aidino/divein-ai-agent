@@ -16,5 +16,8 @@ dependencies = [
     "rich>=15.0.0",
 ]
 
+[project.scripts]
+dino-coding = "dino_coding.main:run_interactive_session"
+
 [tool.uv]
-package = false
+package = true

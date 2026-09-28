@@ -1,1 +1,0 @@
-# Bộ dựng System Prompt thích ứng

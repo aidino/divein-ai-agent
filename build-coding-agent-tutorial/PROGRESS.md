@@ -21,8 +21,8 @@
 | Phase | Tên Phase & Cảm hứng từ `oh-my-pi` | Tài liệu Hướng dẫn | Biên soạn | Học tập & Code | Ghi chú & Trọng tâm Kỹ thuật |
 |:---:|:---|:---|:---:|:---:|:---|
 | **00** | **Design Architecture V3.1** | [`00_design_report.md`](00_design_report.md) | ✅ Hoàn thành | ✅ Đã duyệt | Bản đặc tả kiến trúc chuẩn, phân loại Reuse vs Porting. |
-| **01** | **Hello Harness & Context Core**<br>*(từ `agent-loop.ts`, `append-only-context.ts`)* | [`phase_01_hello_agent.md`](phase_01_hello_agent.md) | ✅ Hoàn thành | 🟡 **Đang học** | Khởi tạo Deep Agent, quản lý tin nhắn Append-Only, stream token v3 qua Rich CLI. |
-| **02** | **Robust VFS & Hashline Editing**<br>*(từ `crates/pi-edit`, `read-summary.ts`)* | `phase_02_file_operations.md` | ⏳ Chờ Phase 1 | ⚪ Chưa bắt đầu | Porting engine mỏ neo dòng/hash từ Rust sang Python; Smart Read phân trang & tóm tắt. |
+| **01** | **Hello Harness & Context Core**<br>*(từ `agent-loop.ts`, `append-only-context.ts`)* | [`phase_01_hello_agent.md`](phase_01_hello_agent.md) | ✅ Hoàn thành | ✅ **Đã hoàn thành** | Khởi tạo Deep Agent, quản lý tin nhắn Append-Only, stream token v3 qua Rich CLI. |
+| **02** | **Robust VFS & Hashline Editing**<br>*(từ `crates/pi-edit`, `read-summary.ts`)* | `phase_02_file_operations.md` | 🟡 **Chuẩn bị biên soạn** | ⏳ Chờ hướng dẫn | Porting engine mỏ neo dòng/hash từ Rust sang Python; Smart Read phân trang & tóm tắt. |
 | **02.5**| **Codebase Intelligence với ast-grep**<br>*(từ `ast-grep.ts`, `ast-edit.ts`)* | `phase_025_codebase_intelligence.md` | ⏳ Chờ Phase 2 | ⚪ Chưa bắt đầu | Tích hợp `ast-grep` (`sg`) / `ast-grep-py` để search và refactor code theo cú pháp AST. (Bỏ LightRAG). |
 | **03** | **Cognitive Anchor: Task & Plan**<br>*(từ `todo.ts`, `compaction.ts`)* | `phase_03_task_planning.md` | ⏳ Chờ | ⚪ Chưa bắt đầu | `TodoListMiddleware` phân cấp + `SummarizationMiddleware` tự nén ngữ cảnh khi đạt 85% token window. |
 | **04** | **Execution Engine & Loopback Bridge**<br>*(từ `eval.ts`, `src/eval/py/runner.py`)* | `phase_04_code_execution.md` | ⏳ Chờ | ⚪ Chưa bắt đầu | Persistent Python REPL chạy ngầm (NDJSON) có IPC loopback cho phép script test gọi lại tool Agent. |
@@ -52,15 +52,27 @@
 | **28/09/2026** | **Quyết định 6**: Chuẩn hóa chữ ký Type-safe LangChain 1.x cho `src/config.py` (`SecretStr`, `max_completion_tokens`, `cast(ProviderType)`). | Kiểm chứng qua Pyright 1.1.414 (0 errors, 0 warnings); cập nhật mã nguồn mẫu và bổ sung callout gỡ lỗi type trong `phase_01_hello_agent.md`. | ✅ Đã áp dụng |
 | **28/09/2026** | **Quyết định 7**: Khắc phục lỗi build `pyproject.toml` bằng cách cấu hình `[tool.uv] package = false`. | Xác định dự án là standalone CLI application, không cần đóng gói wheel; `uv sync` giải quyết 0 error, 0 warning; cập nhật hướng dẫn trong `phase_01_hello_agent.md`. | ✅ Đã áp dụng |
 | **28/09/2026** | **Quyết định 8**: Loại bỏ rò rỉ ngữ cảnh bài học (Tutorial Meta-Leakage) trong `src/prompt.py`. | Xóa câu "Hiện tại bạn đang ở Phase 1...", thay bằng 3 trụ cột kỹ thuật phần mềm chuẩn mực từ `oh-my-pi` (Engineering Rules, Tool Discipline, Completeness Contract). | ✅ Đã áp dụng |
+| **28/09/2026** | **Quyết định 9**: Chuẩn hóa kiến trúc gói theo `src-layout` (`src/dino_coding/`) và cấu hình `[project.scripts] dino-coding`. | Cập nhật cấu trúc thư mục, code mẫu và lệnh gọi trực tiếp `uv run dino-coding` trong `phase_01_hello_agent.md`. | ✅ Đã áp dụng |
+| **28/09/2026** | **Quyết định 10**: Hiển thị trực quan Tool Call và Tool Result trên CLI (khắc phục điểm mù tool execution). | Cập nhật `src/dino_coding/main.py` để bóc tách `AIMessage(tool_calls)` và `ToolMessage(content)` từ state messages, giúp người dùng quan sát minh bạch toàn bộ quá trình Agent gọi công cụ. | ✅ Đã áp dụng |
 
 ---
 
-## 🎯 Sprint Hiện tại: Phase 1 — Hello Harness & Context Core
+## 🎯 Sprint Trước: Phase 1 — Hello Harness & Context Core (✅ Hoàn thành)
 
 * **Tài liệu học tập**: [`phase_01_hello_agent.md`](phase_01_hello_agent.md)
-* **Mục tiêu của bạn**:
-  1. Khởi tạo project với `uv init` và cài đặt `deepagents`, `langchain-openai`, `rich`.
-  2. Tạo 5 module: `src/config.py`, `src/prompt.py`, `src/tools/base.py`, `src/agent.py`, `src/main.py`.
-  3. Chạy lệnh `uv run python src/main.py` và kiểm tra 3 kịch bản: Tool Calling tự động, Phân tích mã, và Trí nhớ ngữ cảnh Append-Only.
-* **Ghi nhận phản hồi sau khi hoàn thành**:
-  *(Sẽ được điền sau khi bạn thực hành xong Phase 1 và chia sẻ kết quả hoặc góp ý)*
+* **Trạng thái thực hành**: Đã chạy thành công 3/3 kịch bản kiểm thử trên provider `zai`.
+* **Ghi nhận phản hồi thực tế từ bạn**:
+  1. *Test 1 (Environment Info Tool)*: ✅ Thành công. Agent tự gọi tool và trả về đúng thông số hệ điều hành Linux kernel 7.0, Python 3.12.13 trong virtualenv `.venv`.
+  2. *Test 2 (Code Analysis Tool)*: ✅ Logic thành công (kết quả 2 dòng, 31 ký tự do tool trả về). Cải tiến bóc tách `AIMessage.tool_calls` và `ToolMessage.content` vào `src/dino_coding/main.py`.
+  3. *Test 3 (Append-Only Context Memory)*: ✅ Thành công. Agent truy xuất chính xác ngữ cảnh câu hỏi và kết quả phân tích ở lượt trước.
+  4. *Cấu trúc dự án*: Chuẩn hóa theo `src-layout` (`src/dino_coding/`), kích hoạt `[project.scripts] dino-coding` chạy trực tiếp bằng `uv run dino-coding`.
+
+---
+
+## 🎯 Sprint Tiếp theo: Phase 2 — Robust VFS & Hashline Editing
+
+* **Tài liệu hướng dẫn**: `phase_02_file_operations.md` (chuẩn bị biên soạn).
+* **Mục tiêu kỹ thuật**:
+  1. **Porting Hashline Editing Engine**: Chuyển giao giải pháp mỏ neo dòng/hash từ Rust (`crates/pi-edit`) sang Python (`src/dino_coding/tools/editor.py`), giải quyết triệt để lỗi hallucinatory line number và collision khi sửa code.
+  2. **Smart Read Tool**: Xây dựng công cụ đọc file thông minh có phân trang (pagination) và tóm tắt tệp lớn (lấy cảm hứng từ `read-summary.ts` của `oh-my-pi`).
+  3. **Tích hợp vào Agent**: Nối các tool thao tác tệp vào Deep Agents và kiểm thử sửa file thực tế.
