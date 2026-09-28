@@ -8,6 +8,7 @@ from dino_coding.tools.todo.types import (
 )
 from dino_coding.tools.todo.tracker import TodoTracker
 from dino_coding.tools.todo.tool import get_todo_tool, TODO_DESCRIPTION
+from dino_coding.tools.todo.middleware import TodoMiddleware, MUTATING_TOOLS
 
 __all__ = [
     "TodoItem",
@@ -19,4 +20,6 @@ __all__ = [
     "TodoTracker",
     "get_todo_tool",
     "TODO_DESCRIPTION",
+    "TodoMiddleware",
+    "MUTATING_TOOLS",
 ]
