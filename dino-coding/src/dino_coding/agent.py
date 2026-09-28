@@ -12,7 +12,7 @@ from dino_coding.tools.base import initial_tools
 from dino_coding.tools.ast_tools import ast_tools
 from dino_coding.tools.editor import edit
 from dino_coding.tools.fs import file_tools
-
+from dino_coding.tools.todo import TodoMiddleware
 
 def _get_workspace_root() -> str:
     """Workspace root dùng chung bởi cả custom tools lẫn deepagents backend."""
@@ -41,11 +41,13 @@ def create_my_coding_agent() -> CompiledStateGraph:
     # Backend trỏ đúng workspace root, virtual_mode=False để
     # ls/glob/grep thao tác trên ổ đĩa thật
     backend = FilesystemBackend(root_dir=workspace_root, virtual_mode=False)
+    todo_middleware = TodoMiddleware()
 
     agent: CompiledStateGraph = create_deep_agent(
         model=llm,
         tools=[*initial_tools, *file_tools, edit, *ast_tools],
         system_prompt=system_prompt,
+        middleware=[todo_middleware],
         backend=backend,
     )
     return agent
