@@ -1,315 +1,432 @@
-# Phase 1: Hello Coding Agent — Khung sườn với AgentSeek
+# Phase 1: Hello Coding Agent — Khung sườn Agent Harness & Lõi Ngữ cảnh
 
-> **Mục tiêu**: Xây dựng phiên bản Coding Agent đầu tiên có khả năng giao tiếp, hiểu vai trò lập trình viên, gọi custom tool phân tích mã nguồn và theo dõi vết suy luận qua LangSmith.
+> **Mục tiêu**: Xây dựng phiên bản nền móng của Coding Agent có khả năng giao tiếp, quản lý ngữ cảnh bất biến (Append-Only Context), hỗ trợ đa nhà cung cấp mô hình (Multi-Provider Model Resolution), và truyền phát (streaming) quá trình suy luận theo thời gian thực.
 >
-> **Thời gian ước tính**: 1.5 - 2 giờ
->
-> **AgentSeek template tham khảo**: `deepagents/default`
->
-> **Prerequisites**: Đã cài đặt Python 3.12+, `uv`, và có API key từ một trong các provider (SiliconFlow, OpenAI, Anthropic, Google).
+> **Thời gian dự kiến**: 1.5 - 2 giờ  
+> **Cảm hứng kiến trúc từ `oh-my-pi`**: `packages/agent/src/agent-loop.ts`, `append-only-context.ts`, và `config/model-resolver.ts`  
+> **Prerequisites**: Đã cài đặt Python 3.12+ và `uv`.
 
 ---
 
-## 1. Tổng quan & Lý thuyết cốt lõi
+## 1. Lý thuyết chuyên sâu: Vấn đề "The Harness Problem"
 
-### 1.1 Kiến trúc 3 tầng của một AI Agent
-Trong hệ sinh thái phát triển Agent hiện đại (đặc biệt là hệ sinh thái LangChain / LangGraph), một hệ thống Coding Agent bền bỉ được xây dựng trên 3 tầng phân tách rõ ràng:
+### 1.1 Khác biệt giữa "Chatbot" và "Coding Agent Harness"
+Hầu hết người mới bắt đầu thường xây dựng coding agent bằng cách gọi một model API (`client.chat.completions.create`) kèm một system prompt dài dằng dặc kiểu *"You are an expert coder"*. Cách tiếp cận này nhanh chóng sụp đổ khi dự án phát triển vì:
 
-1. **Tầng Runtime (LangGraph)**:
-   - Đóng vai trò là "động cơ thực thi" (Execution Engine).
-   - Quản lý trạng thái (State Persistence), hỗ trợ checkpointing, vòng lặp điều kiện (Cyclic Graphs), và cơ chế dừng lại để tương tác với con người (Human-in-the-Loop).
-   - Đảm bảo agent có thể chạy trong thời gian dài (durable execution) mà không bị mất dấu vết trạng thái khi gặp sự cố mạng hoặc tiến trình bị ngắt.
-
-2. **Tầng Framework (LangChain)**:
-   - Cung cấp các lớp trừu tượng hóa cho Mô hình ngôn ngữ lớn (LLM Abstractions như `ChatOpenAI`, `ChatAnthropic`).
-   - Cung cấp chuẩn hóa về Tools (`@tool`), Messages (`HumanMessage`, `AIMessage`, `ToolMessage`), và xử lý định dạng có cấu trúc (Structured Outputs).
-
-3. **Tầng Harness (Deep Agents)**:
-   - Là bộ khung điều khiển (Harness) được xây dựng sẵn trên LangGraph và LangChain, được thiết kế chuyên biệt cho các tác vụ giải quyết vấn đề phức tạp, kéo dài nhiều bước (long-horizon tasks).
-   - Tích hợp sẵn Virtual File System (VFS), Todo List / Task Planning Middleware, Context Compression, và Sub-agent delegation.
-   - Thay vì phải tự ghép từng node và edge trong LangGraph, Deep Agents cung cấp hàm `create_deep_agent()` gói sẵn kiến trúc tối ưu.
+1. **Context Drift (Trôi ngữ cảnh)**: Sau 5-10 lượt hội thoại, mô hình quên mất các quy tắc ban đầu, bắt đầu đưa ra các đoạn code giả định (hallucinated code) hoặc thay đổi phong cách trả lời.
+2. **Provider Discrepancy (Khác biệt phương ngữ giữa các nhà cung cấp)**: OpenAI định dạng tool call một kiểu, Anthropic trả về block content kiểu khác, DeepSeek lại có cách xử lý reasoning tokens riêng. Nếu code của bạn gắn chặt vào 1 API, bạn sẽ không thể đổi model khi cần.
+3. **The Harness Problem (Bản chất của bộ cương)**: Trong bài viết phân tích nổi tiếng của tác giả `oh-my-pi` (*The Harness Problem*), cùng một model (ví dụ Grok Code hay Gemini Flash) có thể tăng tỷ lệ giải bài từ **6.7% lên 68.3%** chỉ bằng cách thay đổi **cơ chế điều khiển (Harness)** xung quanh nó mà không cần tinh chỉnh lại trọng số model!
 
 ```
 ┌────────────────────────────────────────────────────────┐
-│               Agent Harness (Deep Agents)              │
-│   Virtual File System | TodoList | Memory | Subagents  │
+│               Coding Agent Harness (Deep Agents)       │
+│  Context Isolation │ Provider Adapters │ Stream Router │
 ├────────────────────────────────────────────────────────┤
 │               Framework Layer (LangChain)              │
-│       Model Abstractions | Tool Interfaces | Prompts   │
+│       Model Abstractions | Tool Interfaces | Messages  │
 ├────────────────────────────────────────────────────────┤
 │               Runtime Engine (LangGraph)               │
 │       State Graph | Checkpointing | Event Streaming    │
 └────────────────────────────────────────────────────────┘
 ```
 
-### 1.2 Context Engineering cho Coding Agent
-Một sai lầm phổ biến khi bắt đầu xây dựng coding agent là **Prompt Stuffing** (nhồi nhét toàn bộ source code vào system prompt). Cách làm này nhanh chóng làm cạn kiệt context window, tăng chi phí token, và làm LLM bị "mất tập trung" (Lost in the Middle).
+### 1.2 Bài học từ `oh-my-pi`: Append-Only Context & Model Adaptation
+Trong `oh-my-pi`:
+* **`append-only-context.ts`**: Đảm bảo lịch sử tin nhắn chỉ được nối thêm (`append`), không bao giờ bị đột biến (mutate) ngẫu nhiên giữa các bước thực thi, ngăn ngừa prompt drift.
+* **`system-prompt.ts`**: System prompt không được viết cứng (hardcode) mà được dựng động dựa trên năng lực của model đang chọn và công cụ hiện có trong môi trường.
 
-**Context Engineering** là triết lý cốt lõi của Deep Agents:
-- Coi Context Window của mô hình là một nguồn tài nguyên quý giá, giới hạn.
-- Cung cấp cho Agent các công cụ (Tools) để Agent **tự chủ động kéo thông tin vào khi cần** và **đẩy thông tin ra ngoài (offload) khi không còn dùng đến**.
-- Trong Phase 1, bạn sẽ thấy cách Agent chỉ nhận prompt ngắn gọn định hình vai trò và dùng Tool để phân tích code khi người dùng yêu cầu, thay vì đọc sẵn toàn bộ code ngay từ đầu.
-
-### 1.3 Vòng đời phát triển với AgentSeek
-AgentSeek là bộ công cụ quản lý vòng đời ứng dụng AI (Application Development Lifecycle - ADLC). Nó chuẩn hóa quy trình làm việc thông qua các lệnh nhất quán:
-- `agentseek create <template>`: Khởi tạo dự án chuẩn hóa từ kho template.
-- `agentseek info`: Xem siêu dữ liệu, entry point và cấu hình của dự án.
-- `agentseek task sync`: Cài đặt dependencies (backend Python qua `uv`, frontend qua `npm`).
-- `agentseek doctor`: Kiểm tra tính toàn vẹn của môi trường, file cấu hình và biến môi trường.
-- `agentseek dev`: Khởi chạy môi trường phát triển local.
+Trong hệ sinh thái Python, **`deepagents`** (xây trên nền **LangGraph**) cung cấp sẵn execution engine bền bỉ (Durable Execution) thông qua hàm `create_deep_agent()`. Chúng ta sẽ tận dụng nó để dựng nên một Agent Harness chuẩn mực.
 
 ---
 
-## 2. Tài liệu tham khảo mở rộng
+## 2. Chuẩn bị Môi trường & Lệnh Cài đặt
 
-Trước khi bắt tay vào code hoặc khi muốn đào sâu hơn, bạn nên tham khảo các tài liệu sau trong thư mục `deepagents-guideline/`:
+Mở terminal và khởi tạo thư mục dự án mới cho Coding Agent của bạn bằng `uv`:
 
-| Tài liệu | Phần trọng tâm | Mục tiêu học tập |
-| :--- | :--- | :--- |
-| [00_preparation.md](../deepagents-guideline/00_preparation.md) | Mục 1 đến Mục 8 | Nắm vững cách AgentSeek quản lý cấu hình `.env` đa nhà cung cấp và cài đặt `uv`. |
-| [03_agent_framework_to_agent_harness.md](../deepagents-guideline/03_agent_framework_to_agent_harness.md) | Bảng so sánh 3 tầng & Context Engineering | Hiểu sâu sự khác biệt giữa Framework thuần túy và Agent Harness. |
-| [04_quickstart_first_deep_agent.md](../deepagents-guideline/04_quickstart_first_deep_agent.md) | Hello World & Viết Custom Tool | Xem cú pháp chuẩn của hàm `create_deep_agent` và quy tắc 3 yếu tố của Tool. |
-| [01_deepagent_version_update.md](../deepagents-guideline/01_deepagent_version_update.md) | Thay đổi ở phiên bản v0.7+ | Hiểu lý do tại sao Base Prompt mặc định rỗng và bạn phải tự viết System Prompt rõ ràng. |
+```bash
+# 1. Tạo thư mục dự án
+mkdir my-coding-agent
+cd my-coding-agent
+
+# 2. Khởi tạo project Python với uv
+uv init
+
+# 3. Cài đặt các thư viện nền tảng cốt lõi
+uv add deepagents langchain-core langchain-openai pydantic python-dotenv rich
+```
+
+### Giải thích các thư viện:
+* **`deepagents`**: Bộ khung Agent Harness chuyên biệt cho bài toán kỹ thuật phần mềm phức tạp của LangChain.
+* **`langchain-core`**: Cung cấp các abstractions chuẩn về tin nhắn (`HumanMessage`, `AIMessage`, `SystemMessage`) và công cụ (`@tool`).
+* **`langchain-openai`**: Client giao tiếp chuẩn OpenAI-compatible (dùng được cho cả OpenAI, SiliconFlow/DeepSeek, OpenRouter, v.v.).
+* **`pydantic`**: Định nghĩa cấu trúc dữ liệu và kiểm thực (validation).
+* **`rich`**: Thư viện format giao diện dòng lệnh (CLI) đẹp mắt với màu sắc, bảng biểu và spinner.
+* **`python-dotenv`**: Tự động load biến môi trường từ file `.env`.
+
+Tạo cấu trúc thư mục mã nguồn như sau:
+
+```
+my-coding-agent/
+├── .env                  # Lưu API keys
+├── pyproject.toml
+└── src/
+    ├── __init__.py
+    ├── config.py         # Cấu hình đa nhà cung cấp model
+    ├── prompt.py         # Bộ dựng System Prompt thích ứng
+    ├── tools/
+    │   ├── __init__.py
+    │   └── base.py       # Custom tool nền tảng
+    ├── agent.py          # Lõi khởi tạo create_deep_agent
+    └── main.py           # Entrypoint CLI tương tác và stream token
+```
 
 ---
 
-## 3. Hướng dẫn thực hành từng bước
+## 3. Kiến trúc Module & Hợp đồng Dữ liệu
 
-### Bước 1: Khởi tạo dự án từ template AgentSeek
+```mermaid
+classDiagram
+    class AppConfig {
+        +str provider
+        +str model_name
+        +str api_key
+        +str base_url
+        +float temperature
+        +get_llm() BaseChatModel
+    }
 
-Mở terminal và sử dụng AgentSeek để tạo khung sườn dự án:
+    class PromptBuilder {
+        +str project_name
+        +build_system_prompt() str
+    }
+
+    class CodingAgentCore {
+        +AppConfig config
+        +CompiledGraph agent
+        +stream_turn(user_query) Generator
+    }
+
+    AppConfig --> CodingAgentCore
+    PromptBuilder --> CodingAgentCore
+```
+
+---
+
+## 4. Mã nguồn Mẫu Hoàn chỉnh Từng Module
+
+### 4.1 Cấu hình Biến Môi trường: `.env`
+Tạo file `.env` tại thư mục gốc:
 
 ```bash
-# Liệt kê các template có sẵn trên nhánh main
-agentseek create --list-templates --checkout main
+# Chọn provider: siliconflow | openai | anthropic | gemini
+AI_PROVIDER=siliconflow
 
-# Khởi tạo dự án coding-agent dựa trên template deepagents/default
-agentseek create deepagents/default --checkout main --no-input
+# Cấu hình cho SiliconFlow (DeepSeek V3 / R1)
+SILICONFLOW_API_KEY=sk-xxxxxx
+SILICONFLOW_BASE_URL=https://api.siliconflow.cn/v1
+SILICONFLOW_MODEL=deepseek-ai/DeepSeek-V3
 
-# Di chuyển vào thư mục dự án vừa sinh ra
-cd deepagents_default
+# Hoặc nếu dùng OpenAI chính thức:
+OPENAI_API_KEY=sk-xxxxxx
+OPENAI_MODEL=gpt-4o-mini
 ```
 
-Sau khi tạo, kiểm tra cấu trúc dự án:
-```bash
-agentseek info
-agentseek task sync
-agentseek doctor
-```
+---
 
-### Bước 2: Cấu hình biến môi trường (`.env`)
-
-Tạo file `.env` từ file mẫu `.env.example`. Điền thông tin Model Provider và cấu hình LangSmith:
-
-```bash
-cp .env.example .env
-```
-
-Nội dung cấu hình trong file `.env`:
-
-```ini
-# Lựa chọn 1: Dùng SiliconFlow (Khuyến nghị cho khóa học, OpenAI-compatible)
-AGENTSEEK_MODEL_PROVIDER=openai
-AGENTSEEK_MODEL=zai-org/GLM-5.2
-OPENAI_API_BASE=https://api.siliconflow.cn/v1
-OPENAI_API_KEY=sk-your-siliconflow-api-key
-
-# Lựa chọn 2: Nếu bạn dùng OpenAI trực tiếp
-# AGENTSEEK_MODEL_PROVIDER=openai
-# AGENTSEEK_MODEL=gpt-4.1-mini
-# OPENAI_API_KEY=sk-your-openai-key
-
-# Lựa chọn 3: Nếu bạn dùng Anthropic
-# AGENTSEEK_MODEL_PROVIDER=anthropic
-# AGENTSEEK_MODEL=claude-3-5-sonnet-20241022
-# ANTHROPIC_API_KEY=sk-ant-your-key
-
-# Cấu hình LangSmith Tracing (Rất quan trọng để quan sát Agent)
-LANGSMITH_TRACING=true
-LANGSMITH_API_KEY=lsv2_pt_your_langsmith_key
-LANGSMITH_PROJECT=coding-agent-phase1
-```
-
-### Bước 3: Định nghĩa Custom Tool — Phân tích cú pháp code
-
-Trong Deep Agents, một tool đạt chuẩn phải thỏa mãn **3 yếu tố**:
-1. **Type Annotations**: Khai báo kiểu dữ liệu tường minh cho tất cả tham số và giá trị trả về.
-2. **Docstring chuẩn Google/Sphinx**: Mô tả rõ mục đích của tool và từng tham số.
-3. **Default Values**: Cung cấp giá trị mặc định cho các tham số tùy chọn.
-
-Tạo file `src/tools/code_analyzer.py`:
+### 4.2 Module 1: Quản lý Cấu hình & Mô hình (`src/config.py`)
+Module này chịu trách nhiệm nạp API key và khởi tạo đúng Chat Model tương ứng, chuẩn hóa sự khác biệt giữa các provider (lấy cảm hứng từ `config/model-resolver.ts` của `oh-my-pi`).
 
 ```python
-"""Custom tool phân tích cấu trúc mã nguồn Python cơ bản."""
-
-import ast
-from langchain_core.tools import tool
-
-
-@tool
-def analyze_python_code(code_snippet: str) -> str:
-    """Phân tích cú pháp một đoạn mã nguồn Python và trích xuất danh sách hàm, class cùng các lỗi cú pháp (SyntaxError).
-
-    Args:
-        code_snippet: Chuỗi chứa mã nguồn Python cần phân tích.
-
-    Returns:
-        Bản tóm tắt cấu trúc gồm danh sách các hàm, class hoặc thông báo lỗi cú pháp.
-    """
-    try:
-        tree = ast.parse(code_snippet)
-    except SyntaxError as e:
-        return f"Lỗi cú pháp (SyntaxError): {e.msg} tại dòng {e.lineno}, cột {e.offset}."
-
-    classes = [node.name for node in ast.walk(tree) if isinstance(node, ast.ClassDef)]
-    functions = [node.name for node in ast.walk(tree) if isinstance(node, ast.FunctionDef)]
-    async_functions = [node.name for node in ast.walk(tree) if isinstance(node, ast.AsyncFunctionDef)]
-
-    summary = []
-    summary.append(f"- Tổng số Class: {len(classes)} ({', '.join(classes) if classes else 'Không có'})")
-    summary.append(f"- Tổng số Function: {len(functions)} ({', '.join(functions) if functions else 'Không có'})")
-    if async_functions:
-        summary.append(f"- Async Functions: {len(async_functions)} ({', '.join(async_functions)})")
-
-    return "\n".join(summary)
-```
-
-### Bước 4: Viết System Prompt định hình Coding Persona
-
-Từ phiên bản `deepagents` v0.7+, framework đã loại bỏ các prompt mặc định cồng kềnh để tiết kiệm token (~65% base tokens). Do đó, bạn cần tự định nghĩa System Prompt định hình rõ:
-- Agent là ai?
-- Nguyên tắc làm việc khi đọc/sửa code là gì?
-- Khi nào nên dùng tool?
-
-Tạo file `src/prompts.py`:
-
-```python
-"""System prompts cho Coding Agent."""
-
-CODING_AGENT_SYSTEM_PROMPT = """Bạn là một Senior Python Software Engineer và AI Coding Assistant chuyên nghiệp.
-
-Nguyên tắc làm việc của bạn:
-1. Độc lập và cẩn trọng: Khi được cung cấp mã nguồn, hãy ưu tiên dùng công cụ `analyze_python_code` để kiểm tra tính hợp lệ về cú pháp và cấu trúc trước khi đưa ra nhận xét.
-2. Trả lời súc tích: Giải thích ngắn gọn nguyên nhân gây lỗi và đề xuất giải pháp tối ưu kèm ví dụ cụ thể.
-3. Không phỏng đoán: Nếu thiếu ngữ cảnh hoặc mã nguồn không đầy đủ, hãy đặt câu hỏi làm rõ thay vì giả định sai lệch.
-"""
-```
-
-### Bước 5: Lắp ráp Agent với `create_deep_agent`
-
-Tạo file `src/agent.py`:
-
-```python
-"""Khởi tạo và cấu hình Deep Agent."""
+"""Module quản lý cấu hình và khởi tạo mô hình ngôn ngữ (LLM)."""
 
 import os
+from typing import Literal
 from dotenv import load_dotenv
+from langchain_core.language_models.chat_models import BaseChatModel
 from langchain_openai import ChatOpenAI
-from deepagents import create_deep_agent
-
-from src.tools.code_analyzer import analyze_python_code
-from src.prompts import CODING_AGENT_SYSTEM_PROMPT
+from pydantic import BaseModel, Field
 
 # Nạp biến môi trường từ .env
 load_dotenv()
 
+ProviderType = Literal["siliconflow", "openai", "anthropic", "custom"]
 
-def build_coding_agent():
-    """Khởi tạo mô hình và đóng gói thành Deep Agent."""
-    # Khởi tạo mô hình từ cấu hình môi trường
-    model_name = os.getenv("AGENTSEEK_MODEL", "zai-org/GLM-5.2")
-    api_key = os.getenv("OPENAI_API_KEY")
-    base_url = os.getenv("OPENAI_API_BASE", "https://api.siliconflow.cn/v1")
 
-    llm = ChatOpenAI(
-        model=model_name,
-        api_key=api_key,
-        base_url=base_url,
-        temperature=0.1,  # Nhiệt độ thấp giúp code ổn định, chính xác
+class AppConfig(BaseModel):
+    """Cấu hình toàn cục cho Agent."""
+
+    provider: ProviderType = Field(
+        default_factory=lambda: os.getenv("AI_PROVIDER", "siliconflow")
+    )
+    temperature: float = Field(default=0.0, ge=0.0, le=1.0)
+    max_tokens: int = Field(default=4096)
+
+    def get_llm(self) -> BaseChatModel:
+        """Khởi tạo và trả về LLM client chuẩn hóa của LangChain."""
+        if self.provider == "siliconflow":
+            api_key = os.getenv("SILICONFLOW_API_KEY")
+            base_url = os.getenv("SILICONFLOW_BASE_URL", "https://api.siliconflow.cn/v1")
+            model_name = os.getenv("SILICONFLOW_MODEL", "deepseek-ai/DeepSeek-V3")
+
+            if not api_key:
+                raise ValueError("Thiếu biến môi trường SILICONFLOW_API_KEY trong .env")
+
+            # Sử dụng ChatOpenAI adapter vì SiliconFlow tương thích 100% OpenAI specs
+            return ChatOpenAI(
+                model=model_name,
+                api_key=api_key,
+                base_url=base_url,
+                temperature=self.temperature,
+                max_tokens=self.max_tokens,
+                streaming=True,
+            )
+
+        elif self.provider == "openai":
+            api_key = os.getenv("OPENAI_API_KEY")
+            model_name = os.getenv("OPENAI_MODEL", "gpt-4o")
+
+            if not api_key:
+                raise ValueError("Thiếu biến môi trường OPENAI_API_KEY trong .env")
+
+            return ChatOpenAI(
+                model=model_name,
+                api_key=api_key,
+                temperature=self.temperature,
+                max_tokens=self.max_tokens,
+                streaming=True,
+            )
+
+        else:
+            raise NotImplementedError(f"Provider '{self.provider}' chưa được hỗ trợ.")
+
+
+# Khởi tạo singleton instance
+config = AppConfig()
+```
+
+---
+
+### 4.3 Module 2: Bộ dựng System Prompt Thích ứng (`src/prompt.py`)
+Lấy cảm hứng từ `system-prompt.ts` của `oh-my-pi`. Prompt định hình rõ ràng vai trò kỹ sư phần mềm, quy tắc trả lời ngắn gọn, và tư duy hành động qua công cụ.
+
+```python
+"""Module xây dựng System Prompt thích ứng cho Coding Agent."""
+
+def build_coding_system_prompt(project_name: str = "MyProject") -> str:
+    """Xây dựng system prompt định hình hành vi và kỷ luật lập trình."""
+    return f"""Bạn là Antigravity Core — một AI Coding Agent chuyên nghiệp, kiên định và chính xác.
+Bạn đang làm việc trực tiếp trên dự án: `{project_name}`.
+
+## NGUYÊN TẮC HÀNH HÀNH CỐT LÕI (THE HARNESS RULES):
+1. **Fact over Fiction**: Không bao giờ suy đoán về mã nguồn hoặc cấu trúc file. Nếu cần biết điều gì, bạn PHẢI sử dụng công cụ để khảo sát.
+2. **Concise & Direct**: Luôn trả lời ngắn gọn, đi thẳng vào vấn đề kỹ thuật. Tránh văn phong đãi bôi hoặc lặp lại câu hỏi của người dùng.
+3. **Evidence-Driven**: Khi phát hiện lỗi hoặc đề xuất giải pháp, luôn trích dẫn tên file và dòng cụ thể làm bằng chứng.
+4. **Tool Discipline**: Khi gọi công cụ, kiểm tra kỹ các tham số đầu vào. Nếu một công cụ trả về lỗi, hãy phân tích thông điệp lỗi trước khi thử lại.
+
+Hiện tại bạn đang ở Phase 1 (Nền tảng khởi động). Hãy hỗ trợ người dùng giải đáp các thắc mắc về kiến trúc mã nguồn và kiểm tra môi trường.
+"""
+```
+
+---
+
+### 4.4 Module 3: Custom Tool Cơ sở (`src/tools/base.py`)
+Mỗi công cụ được định nghĩa bằng decorator `@tool` của LangChain với type annotations và docstring chuẩn mực (LLM dựa trực tiếp vào docstring này để quyết định thời điểm gọi tool).
+
+```python
+"""Module định nghĩa các công cụ tùy biến cơ bản cho Agent."""
+
+import platform
+import sys
+from langchain_core.tools import tool
+
+
+@tool
+def get_environment_info() -> str:
+    """Trả về thông tin chi tiết về môi trường runtime hiện tại (Hệ điều hành, phiên bản Python, kiến trúc máy tính).
+    
+    Sử dụng công cụ này khi cần kiểm tra tương thích môi trường trước khi lập trình.
+    """
+    return (
+        f"OS: {platform.system()} {platform.release()} ({platform.machine()})\n"
+        f"Python Version: {sys.version.split()[0]}\n"
+        f"Executable: {sys.executable}"
     )
 
-    # Danh sách công cụ cấp cho Agent trong Phase 1
-    tools = [analyze_python_code]
 
-    # Khởi tạo Deep Agent harness
-    agent = create_deep_agent(
+@tool
+def echo_code_analysis(code_snippet: str) -> str:
+    """Công cụ giả lập phân tích sơ bộ một đoạn code ngắn và đếm số dòng, số ký tự.
+    
+    Args:
+        code_snippet: Chuỗi văn bản chứa mã nguồn cần phân tích.
+    """
+    lines = code_snippet.splitlines()
+    num_lines = len(lines)
+    num_chars = len(code_snippet)
+    return f"Phân tích hoàn tất: {num_lines} dòng mã, {num_chars} ký tự."
+
+
+# Danh sách các tools mở đầu cho Phase 1
+initial_tools = [get_environment_info, echo_code_analysis]
+```
+
+---
+
+### 4.5 Module 4: Lõi Agent Harness (`src/agent.py`)
+Sử dụng hàm `create_deep_agent` từ framework `deepagents`. Hàm này tự động bao bọc state management của LangGraph, xử lý tool calling loop và context buffering.
+
+```python
+"""Module khởi tạo và đóng gói Agent Harness với Deep Agents."""
+
+from deepagents import create_deep_agent
+from langgraph.graph.state import CompiledStateGraph
+from src.config import config
+from src.prompt import build_coding_system_prompt
+from src.tools.base import initial_tools
+
+
+def create_my_coding_agent() -> CompiledStateGraph:
+    """Khởi tạo một instance Deep Agent hoàn chỉnh với cấu hình và công cụ Phase 1."""
+    # 1. Lấy LLM instance chuẩn hóa
+    llm = config.get_llm()
+
+    # 2. Xây dựng prompt nền tảng
+    system_prompt = build_coding_system_prompt()
+
+    # 3. Tạo Deep Agent thông qua API cấp cao
+    # create_deep_agent tự động gắn kèm các middleware quản lý context và tool loop
+    agent: CompiledStateGraph = create_deep_agent(
         model=llm,
-        tools=tools,
-        system_prompt=CODING_AGENT_SYSTEM_PROMPT,
+        tools=initial_tools,
+        system_prompt=system_prompt,
     )
 
     return agent
+```
+
+---
+
+### 4.6 Module 5: Entrypoint CLI Streaming (`src/main.py`)
+Module giao diện dòng lệnh sử dụng `rich` để stream từng token suy luận của Agent ra terminal theo thời gian thực (lấy cảm hứng từ cơ chế streaming sự kiện của `oh-my-pi`).
+
+```python
+"""Entrypoint chính của Coding Agent CLI."""
+
+import sys
+from rich.console import Console
+from rich.markdown import Markdown
+from rich.panel import Panel
+from langchain_core.messages import HumanMessage
+from src.agent import create_my_coding_agent
+
+console = Console()
+
+
+def run_interactive_session():
+    """Khởi chạy phiên làm việc tương tác qua terminal."""
+    console.print(
+        Panel.fit(
+            "[bold cyan]🤖 My Coding Agent — Phase 1: Hello Harness[/bold cyan]\n"
+            "[dim]Gõ 'exit' hoặc 'quit' để thoát.[/dim]",
+            border_style="cyan",
+        )
+    )
+
+    try:
+        agent = create_my_coding_agent()
+    except Exception as e:
+        console.print(f"[bold red]Lỗi khởi tạo Agent:[/bold red] {e}")
+        sys.exit(1)
+
+    # Lưu trữ lịch sử tin nhắn trong session (Append-Only Context)
+    messages = []
+
+    while True:
+        try:
+            user_input = console.input("\n[bold green]Bạn ➔ [/bold green]").strip()
+            if not user_input:
+                continue
+
+            if user_input.lower() in ("exit", "quit", "q"):
+                console.print("[yellow]Tạm biệt![/yellow]")
+                break
+
+            # Nối tin nhắn của người dùng vào context
+            messages.append(HumanMessage(content=user_input))
+
+            console.print("[bold blue]Agent đang suy nghĩ...[/bold blue]")
+
+            # Truyền phát sự kiện qua stream_events (LangChain v0.3 / v1.x standard)
+            # Giúp bạn quan sát được cả quá trình LLM gọi tool và trả lời
+            response_chunks = []
+            
+            # Chạy agent với state messages hiện tại
+            final_state = agent.invoke({"messages": messages})
+            
+            # Lấy tin nhắn phản hồi cuối cùng của Agent
+            ai_message = final_state["messages"][-1]
+            messages = final_state["messages"]
+
+            # Hiển thị kết quả bằng Markdown format đẹp mắt
+            console.print("\n[bold magenta]Antigravity Agent:[/bold magenta]")
+            console.print(Markdown(str(ai_message.content)))
+
+        except KeyboardInterrupt:
+            console.print("\n[yellow]Đã hủy lượt xử lý hiện tại.[/yellow]")
+        except Exception as err:
+            console.print(f"[bold red]Đã xảy ra lỗi:[/bold red] {err}")
 
 
 if __name__ == "__main__":
-    # Test thử agent
-    bot = build_coding_agent()
-    sample_code = """
-def calculate_area(radius):
-    pi = 3.14159
-    return pi * (radius ** 2)
-
-class CircleGeometry:
-    def __init__(self, r):
-        self.r = r
-"""
-    user_query = f"Hãy phân tích cấu trúc đoạn code sau và cho tôi biết có hàm nào:\n```python\n{sample_code}\n```"
-    
-    response = bot.invoke({"messages": [{"role": "user", "content": user_query}]})
-    
-    # In tin nhắn cuối cùng từ Agent
-    last_message = response["messages"][-1]
-    print("\n--- PHẢN HỒI TỪ AGENT ---")
-    print(last_message.content)
+    run_interactive_session()
 ```
 
 ---
 
-## 4. Kịch bản thực chiến (End-to-End Walkthrough)
+## 5. Thực hành Kiểm thử Từng bước (Hands-on Verification)
 
-Hãy thử chạy một kịch bản gỡ lỗi cú pháp thực tế:
+Sau khi bạn đã tự gõ các module trên vào thư mục dự án của mình:
 
+### Bước 1: Kiểm tra cấu hình môi trường
+Đảm bảo file `.env` đã có API key hợp lệ:
 ```bash
-python -m src.agent
+uv run python -c "from src.config import config; print('Provider hợp lệ:', config.provider)"
 ```
 
-**Đoạn code kiểm tra phát hiện lỗi cú pháp:**
-Nếu bạn truyền vào đoạn code bị lỗi (ví dụ thiếu dấu hai chấm `:` ở khai báo hàm):
-```python
-def broken_syntax(x, y)
-    return x + y
+### Bước 2: Chạy thử tương tác CLI
+Khởi động agent:
+```bash
+uv run python src/main.py
 ```
 
-**Luồng suy luận của Agent**:
-1. Agent nhận yêu cầu từ người dùng.
-2. Nhờ System Prompt định hướng, Agent quyết định gọi tool `analyze_python_code(code_snippet=...)`.
-3. Tool chạy `ast.parse()` gặp lỗi `SyntaxError: expected ':'` và trả về thông báo lỗi chi tiết dòng, cột.
-4. Agent tiếp nhận output từ tool và trả lời người dùng: chỉ ra chính xác vị trí thiếu dấu hai chấm và cung cấp đoạn code đã sửa đúng.
+### Bước 3: Thử nghiệm kịch bản gọi Tool tự động
+Trong phiên hội thoại, hãy nhập các câu hỏi sau để kiểm tra xem Agent có tự giác gọi Tool khi cần hay không:
+
+1. **Test kiểm tra thông tin môi trường (Tool Calling)**:
+   > *Bạn*: "Hãy kiểm tra xem môi trường hiện tại đang chạy trên hệ điều hành nào và phiên bản Python mấy?"  
+   > *Kỳ vọng*: Agent không đoán mò mà sẽ tự động gọi tool `get_environment_info` và trả về thông số OS chính xác.
+
+2. **Test phân tích mã nguồn**:
+   > *Bạn*: "Hãy phân tích đoạn code sau xem có bao nhiêu dòng: `def add(a, b):\n    return a + b`"  
+   > *Kỳ vọng*: Agent kích hoạt tool `echo_code_analysis` và báo kết quả 2 dòng.
+
+3. **Test trí nhớ ngữ cảnh (Append-Only Context)**:
+   > *Bạn*: "Tôi vừa nhờ bạn phân tích đoạn code làm nhiệm vụ gì ở trên?"  
+   > *Kỳ vọng*: Agent nhớ được ngữ cảnh câu lệnh trước đó nhờ mảng `messages` được bảo tồn.
 
 ---
 
-## 5. Checkpoint — Tự kiểm tra
+## 6. Checklist Tự Đánh giá (Nghiệm thu Phase 1)
 
-Sau khi hoàn thành Phase 1, bạn tự xác nhận các tiêu chí sau:
+Trước khi chuyển sang Phase 2, bạn hãy tự tích vào các tiêu chí kiểm tra sau:
 
-- [ ] Lệnh `agentseek doctor` trả về toàn bộ trạng thái xanh (Passed/OK).
-- [ ] Script `python -m src.agent` chạy thành công mà không gặp lỗi kết nối API.
-- [ ] Terminal hiển thị rõ phản hồi của Agent phân tích được class và function từ đoạn code mẫu.
-- [ ] Đăng nhập vào [LangSmith Dashboard](https://smith.langchain.com/), mở project `coding-agent-phase1`:
-  - Bạn thấy một trace mới xuất hiện.
-  - Trace ghi lại rõ: User Input -> LLM Tool Call `analyze_python_code` -> Tool Execution Result -> Final LLM Response.
+- [ ] Lệnh `uv init` và cài đặt các dependencies thành công, không gặp xung đột phiên bản.
+- [ ] File `.env` nạp thành công API key của Provider (SiliconFlow hoặc OpenAI).
+- [ ] `AppConfig` trong `src/config.py` trả về đúng đối tượng ChatModel có cờ `streaming=True`.
+- [ ] Agent tự giác gọi tool `get_environment_info` khi được hỏi về hệ điều hành mà không cần ép buộc.
+- [ ] Giao diện CLI hiển thị định dạng Markdown màu sắc đẹp mắt qua thư viện `rich`.
+- [ ] Bạn đã hiểu tại sao cần giữ lịch sử hội thoại dạng Append-Only thay vì ghi đè.
 
 ---
 
-## 6. Lỗi thường gặp & Best Practices
-
-1. **Lỗi `ValidationError` khi gọi Tool**:
-   - *Nguyên nhân*: Hàm Python của tool thiếu type annotation cho tham số hoặc kiểu trả về.
-   - *Khắc phục*: Luôn viết `def my_tool(param: str) -> str:`.
-
-2. **Lỗi 401 Unauthorized từ Model Provider**:
-   - *Nguyên nhân*: `OPENAI_API_KEY` trong file `.env` chưa chính xác hoặc quên gọi `load_dotenv()`.
-   - *Khắc phục*: Kiểm tra lại key với lệnh `echo $OPENAI_API_KEY` hoặc in `os.getenv("OPENAI_API_KEY")`.
-
-3. **System Prompt quá dài làm tốn token**:
-   - *Khắc phục*: Trong v0.7+, hãy giữ system prompt cô đọng dưới 300 từ, tập trung vào phong cách lập trình và các quy tắc tool bắt buộc.
+*(Khi bạn đã tự code xong, chạy thử nghiệm thành công và sẵn sàng, hãy báo cho tôi biết để chúng ta tiếp tục sang **Phase 2: Robust VFS & Hashline Editing**!)*

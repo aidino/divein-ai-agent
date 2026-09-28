@@ -1,294 +1,118 @@
-# 🛠️ Design Report V2: Xây dựng Coding Agent với Deep Agents + AgentSeek
+# 🛠️ Design Report V3: Xây dựng Coding Agent Đỉnh cao — Học hỏi từ Kiến trúc Thực chiến của oh-my-pi
 
-> **Cập nhật**: 25/09/2026 — Tích hợp phản hồi + nghiên cứu H2/2026
-> **Mục đích**: Bạn tự code hoàn toàn — report này chỉ ra concept, tại sao, và đọc tài liệu ở đâu
-
----
-
-## Thay đổi so với V1
-
-| Điểm | V1 | V2 |
-|------|----|----|
-| **Số phase** | 8 | **9** (thêm Codebase Intelligence) |
-| **Scaffold** | Manual setup | **AgentSeek templates** |
-| **Codebase lớn** | Chỉ grep/glob | **AST indexing + GraphRAG (LightRAG)** |
-| **Sandbox** | 1 option | **3 options**: Local, Docker (AIO), Cloud |
-| **Production** | Basic | **Managed Deep Agents + LLM Gateway + Context Hub** |
-| **Format** | Code skeletons | **Concept-only + tài liệu reference** |
-| **Model provider** | SiliconFlow hardcode | **AgentSeek multi-provider** |
+> **Phiên bản**: V3.0 (Cập nhật: 28/09/2026)  
+> **Nền tảng**: Python 3.12+, `uv`, `deepagents` (LangChain ecosystem)  
+> **Cảm hứng kiến trúc**: `oh-my-pi` (omp) — Coding Agent hàng đầu với ~80k dòng Rust + TypeScript/Bun  
+> **Mục tiêu**: Cung cấp khung thiết kế kiến trúc chuẩn mực và hướng dẫn từng bước để bạn **tự tay code hoàn chỉnh** một coding agent chuyên nghiệp.
 
 ---
 
-## AgentSeek Templates — Mapping cho Tutorial
+## 1. Lời mở đầu: Tại sao V2 chưa đủ và Bài học từ oh-my-pi
 
-Dựa trên kết quả `agentseek create --list-templates --checkout main`, đây là các templates phù hợp cho từng phase:
+Ở phiên bản V2, chúng ta đã tiếp cận việc xây dựng agent bằng cách ghép các tính năng có sẵn của `deepagents`. Tuy nhiên, kết quả vẫn mang tính **"chung chung"** — nó giống một chatbot biết gọi tool hơn là một **Coding Agent thực thụ** có thể giải quyết các tác vụ phần mềm phức tạp trong thực tế.
 
-| Phase | Template khuyến nghị | Lý do chọn |
-|-------|---------------------|------------|
-| 1. Hello Agent | `deepagents/default` | Scaffolding tối giản: `create_deep_agent` + lifecycle spec |
-| 2. File Ops | (tiếp tục từ Phase 1) | Thêm `FilesystemBackend` vào project đã tạo |
-| 2.5 Codebase Intelligence | (custom + LightRAG) | Tích hợp LightRAG vào agent làm MCP server hoặc custom tool |
-| 3. Task Planning | (tiếp tục) | Thêm `TodoListMiddleware` |
-| 4. Code Execution | `deepagents/sandbox` | Template có sẵn sandbox coding agent + streamed UI |
-| 5. Sub-agents | `deepagents/subagents-dynamic` | 6 pattern subagent chính thức, evidence-driven UI |
-| 6. Safety | (tiếp tục từ Phase 4) | Thêm `FilesystemPermission` + HITL |
-| 7. Quality Gate | `langchain/rubric` | Evidence-backed rubric revision + guided demo UI |
-| 8. Production | `deepagents/streaming` | Event Streaming v3 showcase |
-| Tham khảo | `deepagents/powercontext` | PowerContext Memory + seekdb (cho Phase 2.5 & long-term memory) |
-| Tham khảo | `deepagents/mcp` | MCP Tools app (cho Phase 8 MCP integration) |
+Khi phân tích sâu codebase của **`oh-my-pi` (omp)** — một coding agent mã nguồn mở được tối ưu hóa khắt khe trên hàng loạt benchmark (Grok, Gemini, MiniMax) và sử dụng hàng ngày bởi các kỹ sư — chúng ta nhận diện được **6 nút thắt sống còn (The Harness Problem)** mà một coding agent bắt buộc phải giải quyết:
 
-> [!TIP]
-> **Chiến lược**: Bắt đầu bằng `deepagents/default`, phát triển dần qua các phase. Khi đến phase quan trọng (sandbox, subagents, streaming), tham khảo template tương ứng để hiểu cấu trúc chuẩn rồi tích hợp vào project chính.
+```
+┌────────────────────────────────────────────────────────────────────────┐
+│                   6 BÀI HỌC KIẾN TRÚC TỪ OH-MY-PI                      │
+├────────────────────────────────┬───────────────────────────────────────┤
+│ 1. Sửa code mong manh          │ • oh-my-pi: Hashline & Anchor editing │
+│    (Brittle String Replace)    │ • DeepAgents: Line-anchored patch     │
+├────────────────────────────────┼───────────────────────────────────────┤
+│ 2. Thiếu phản hồi từ IDE       │ • oh-my-pi: LSP writethrough          │
+│    (No Compiler Feedback)      │ • DeepAgents: Post-edit linter/LSP hook│
+├────────────────────────────────┼───────────────────────────────────────┤
+│ 3. Xung đột ghi đè Subagent   │ • oh-my-pi: Git Worktree per subagent │
+│    (Workspace Pollution)       │ • DeepAgents: GitWorktreeBackend      │
+├────────────────────────────────┼───────────────────────────────────────┤
+│ 4. Sandbox thụ động            │ • oh-my-pi: Persistent eval + bridge  │
+│    (Passive Execution)         │ • DeepAgents: REPL có loopback tool   │
+├────────────────────────────────┼───────────────────────────────────────┤
+│ 5. Lệch hướng khi stream       │ • oh-my-pi: Time-Traveling Rules (TTSR│
+│    (Stream Hallucination)      │ • DeepAgents: Stream abort & reinject │
+├────────────────────────────────┼───────────────────────────────────────┤
+│ 6. Thiên kiến của 1 mô hình   │ • oh-my-pi: Dual-Model Advisor        │
+│    (Single-Model Blindspot)    │ • DeepAgents: RubricEvaluator LLM     │
+└────────────────────────────────┴───────────────────────────────────────┘
+```
 
 ---
 
-## Phase mới: 2.5 — Codebase Intelligence
+## 2. Bảng Ánh xạ Kiến trúc: oh-my-pi ➔ DeepAgents (Python)
 
-### Vấn đề
+Toàn bộ tinh hoa của `oh-my-pi` được chuẩn hóa và ánh xạ sang hệ sinh thái Python + `deepagents` như sau:
 
-Khi coding agent bắt đầu làm việc với codebase lớn (hàng ngàn file), `grep` + `glob` không đủ:
-- **Token explosion**: grep trả về quá nhiều kết quả, tràn context window
-- **Thiếu semantic**: tìm theo keyword không hiểu ý nghĩa code
-- **Không hiểu dependency**: không biết hàm A gọi hàm B ở đâu, class C kế thừa class D
+| Trụ cột kỹ thuật | Triển khai trong `oh-my-pi` | Hiện thực hóa trong Tutorial V3 (`deepagents` + Python) |
+|---|---|---|
+| **Lõi Runtime & Ngữ cảnh** | `agent-loop.ts`, `AppendOnlyContext`, dialect normalization | `create_deep_agent()`, quản lý tin nhắn bất biến, prompt thích ứng theo provider |
+| **Phẫu thuật File (VFS)** | `crates/pi-edit` (hashline anchors), `read-summary.ts` | 7 File tools VFS + `AnchorEditEngine` (mỏ neo dòng/nội dung), Smart Read phân trang |
+| **Codebase Intelligence** | `ast-grep`, `ast-edit`, tree-sitter | `tree-sitter` sinh Repo Map toàn dự án + LightRAG MCP server truy vấn đồ thị ngữ nghĩa |
+| **Bộ neo nhận thức (Task)** | `todo.ts` (trạng thái phân cấp, cây task trực quan) | `TodoListMiddleware` + `SummarizationMiddleware` tự nén khi đạt 85% context |
+| **Thực thi mã có Cầu nối** | Persistent Python/Bun kernel, bridge gọi ngược lại tool | Persistent Python REPL (Local/Docker) + Loopback bridge cho phép test script gọi tool Agent |
+| **Cô lập Subagents** | `task/worktree.ts` (mỗi subagent chạy trên 1 git worktree) | Dynamic Subagents + `GitWorktreeBackend` riêng cho từng subagent, hợp nhất qua PR/diff |
+| **Nối dây IDE (LSP)** | `lsp/writethrough.ts` (bắt diagnostics ngay sau ghi file) | Post-Write Diagnostic Hook kết nối `ruff`/`pyright`, tự động kích hoạt vòng lặp Self-Healing |
+| **Can thiệp Stream & Bảo mật** | TTSR (hủy token stream giữa chừng, ép retry với luật) | LangChain v1.3 stream filtering, `PolicyWrapper`, HITL modal phê duyệt lệnh nguy hiểm |
+| **Cố vấn song song (Advisor)** | `advisor/index.ts` (model phụ đọc từng turn, cảnh báo P0-P3)| Two-model Architecture: Model chính code, Model phụ thẩm định qua `RubricMiddleware` |
+| **Ký ức & Học hỏi liên tục** | `retain`, `learn`, `recall`, SQLite / Mnemopi | LangGraph Store với namespace `(project_id, user_id)`, trích xuất bài học sau mỗi task |
 
-### Giải pháp: 3 tầng
+---
+
+## 3. Lộ trình 10 Phases Toàn diện (V3)
 
 ```mermaid
 flowchart TD
-    subgraph "Tầng 1: Deterministic (luôn đúng)"
-        GREP["grep / glob<br/>Built-in Deep Agents"] 
-        AST["🌳 AST Indexing<br/>tree-sitter<br/>Repo Map, Call Graph"]
-    end
-    
-    subgraph "Tầng 2: Semantic (hiểu ý nghĩa)"
-        RAG["🔍 GraphRAG<br/>LightRAG<br/>Entity + Relationship graph"]
-    end
-    
-    subgraph "Tầng 3: Agentic (tự quyết định)"
-        AGENT["🤖 Agent tự chọn<br/>grep hay AST hay RAG<br/>tùy theo câu hỏi"]
-    end
-    
-    GREP --> AGENT
-    AST --> AGENT
-    RAG --> AGENT
+    P0["Phase 00: Design Report V3<br/>Kiến trúc tổng thể & Bản đồ ánh xạ"] --> P1["Phase 01: Hello Harness & Context Core<br/>create_deep_agent, Dialect & Context Bất biến"]
+    P1 --> P2["Phase 02: Robust VFS & Hashline Editing<br/>Smart Read + Anchor-based Patching"]
+    P2 --> P25["Phase 02.5: Codebase Intelligence<br/>AST Repo Map tree-sitter + LightRAG"]
+    P25 --> P3["Phase 03: Cognitive Anchor & Planning<br/>TodoListMiddleware + Context Compaction"]
+    P3 --> P4["Phase 04: Execution & Loopback Bridge<br/>Persistent REPL + Sandbox-to-Agent IPC"]
+    P4 --> P5["Phase 05: Subagents & Git Worktrees<br/>Branch Isolation + Structured JSON Yields"]
+    P5 --> P6["Phase 06: IDE Wiring & Self-Healing<br/>LSP Diagnostics Hook + Auto Error Correction"]
+    P6 --> P7["Phase 07: Safety, Stream Interception & TTSR<br/>Time-Traveling Stream Rules + HITL Gate"]
+    P7 --> P8["Phase 08: Dual-Model Advisor & Quality Gate<br/>Secondary Reviewer LLM + Rubric Scoring"]
+    P8 --> P9["Phase 09: Long-Term Memory & Production<br/>LangGraph Store + Streaming v3 Terminal UI"]
 ```
 
-### Tại sao LightRAG?
+### Chi tiết mục tiêu từng Phase:
 
-| Tiêu chí | Vector RAG truyền thống | LightRAG |
-|----------|------------------------|----------|
-| **Cấu trúc** | Flat chunks | Knowledge Graph (entity + relationship) |
-| **Multi-hop** | Kém (chỉ tìm chunk giống nhau) | Tốt (theo graph relationship) |
-| **Cập nhật** | Re-index toàn bộ | **Incremental update** |
-| **Token cost** | Cao | Thấp hơn đáng kể |
-| **Query modes** | 1 (similarity) | 5 (naive, local, global, hybrid, mix) |
-
-### Cách tích hợp với Deep Agents
-
-Có 2 approach:
-
-**Approach A**: LightRAG làm **custom tool** cho Deep Agents
-```
-Agent → tool: search_codebase(query, mode="hybrid") → LightRAG → kết quả
-```
-
-**Approach B**: LightRAG làm **MCP server**
-```
-Agent → MCP client → LightRAG MCP server → kết quả
-```
-
-Approach B sạch hơn vì tách biệt hoàn toàn, và bài [14_mcp.md](../deepagents-guideline/14_mcp.md) đã dạy cách tích hợp MCP.
-
-### Tài liệu cần đọc
-
-| Nguồn | Đọc gì | Lý do |
-|-------|--------|-------|
-| [05_virtual_filesystem.md](../deepagents-guideline/05_virtual_filesystem.md) | grep output_modes, glob | Tầng 1: deterministic search |
-| [14_mcp.md](../deepagents-guideline/14_mcp.md) | MCP server creation, `FastMCP`, `MultiServerMCPClient` | Nếu dùng Approach B (MCP) |
-| [LightRAG GitHub](https://github.com/HKUDS/LightRAG) | README, API docs | Setup LightRAG, indexing, query modes |
-| [deepagents/powercontext template](../) | `agentseek create deepagents/powercontext` | Tham khảo cách seekdb+PowerContext quản lý context |
-| tree-sitter docs | Parsers, query API | Nếu muốn build AST index tự tay |
+| Phase | Tên Phase | Trọng tâm lý thuyết & Kỹ thuật | Sản phẩm tự code hoàn chỉnh |
+|:---:|:---|:---|:---|
+| **01** | **Hello Harness & Context Core** | The Harness Problem; Context drift; Chuẩn hóa prompt theo Model Provider; Event Streaming v3. | Module cấu hình đa nhà cung cấp, system prompt thích ứng, runner CLI stream từng token. |
+| **02** | **Robust VFS & Hashline Editing** | Tại sao `str_replace` thất bại; Thuật toán mỏ neo nội dung (Hashline/Anchor); Smart Read phân trang & tóm tắt. | Bộ công cụ 7 VFS tools tích hợp engine chỉnh sửa chính xác từng dòng và tự bảo vệ context. |
+| **02.5**| **Codebase Intelligence & Repo Map**| Giới hạn của Grep; Phân tích cú pháp AST với `tree-sitter`; Biểu đồ quan hệ gọi hàm; GraphRAG. | Script trích xuất Repo Map tự động cho toàn bộ codebase và công cụ truy vấn ngữ nghĩa. |
+| **03** | **Cognitive Anchor: Task & Plan** | Trôi mục tiêu trong hội thoại dài; Vai trò của bộ neo nhận thức bên ngoài; Ngưỡng nén ngữ cảnh 85%. | Agent có khả năng lập kế hoạch nhiều bước, cập nhật tiến độ realtime và tự động tóm tắt lịch sử. |
+| **04** | **Execution Engine & Loopback Bridge**| Persistent Execution vs One-shot Subprocess; Cơ chế Loopback IPC: khi code trong sandbox cần gọi tool agent. | Persistent Python REPL sandbox cho phép chạy script test và gọi ngược lại `tool.read()` để debug. |
+| **05** | **Subagents & Git Worktree Isolation**| Race condition khi multi-agent cùng sửa code; Nguyên lý Git Worktree cô lập; Structured JSON Output. | Hệ thống điều phối subagent phân nhánh worktree riêng, thực thi độc lập và gom diff an toàn. |
+| **06** | **IDE Wiring: LSP & Self-Healing** | Chu trình khép kín của developer; Bắt diagnostics từ compiler/linter (`ruff`/`pyright`); Self-healing loop. | Middleware/Hook tự động kiểm tra lỗi cú pháp sau mỗi lần agent sửa file và yêu cầu sửa ngay. |
+| **07** | **Safety, Stream Interception & TTSR** | Rủi ro lệnh phá hủy; Giám sát token stream thời gian thực; Ngắt dòng Time-Traveling Stream Rules. | Bộ lọc stream phát hiện token nguy hiểm, ngắt dòng tức thì, bơm luật cấm và yêu cầu con người duyệt. |
+| **08** | **Dual-Model Advisor & Quality Gates** | Thiên kiến xác nhận của single-model; Kiến trúc 2 mô hình (Doer & Advisor); Chấm điểm theo tiêu chí (Rubric). | Cố vấn LLM chạy ngầm độc lập chấm điểm mã nguồn theo thang P0-P3 trước khi cho phép commit. |
+| **09** | **Continuous Learning & Production** | Ký ức dự án dài hạn; Bộ ba `retain` - `learn` - `recall`; Đóng gói Terminal TUI hoàn chỉnh. | Agent hoàn chỉnh có bộ nhớ vĩnh viễn, học hỏi từ sai lầm và giao diện tương tác chuyên nghiệp. |
 
 ---
 
-## Phase 4 mở rộng: 3 Sandbox Options
+## 4. Công nghệ & Môi trường Thực thi (Tech Stack)
 
-### Option A: LocalShellBackend (Dev only)
+Để giữ cho dự án gọn gàng, hiệu quả và không bị phân tán, toàn bộ tutorial được chuẩn hóa trên:
 
-| Ưu | Nhược |
-|----|-------|
-| Setup 0 giây | Agent có thể chạy lệnh nguy hiểm |
-| Không cần Docker | Không cô lập — crash ảnh hưởng host |
-| Nhanh nhất | **KHÔNG BAO GIỜ** dùng cho production |
-
-**Đọc**: [05_virtual_filesystem.md](../deepagents-guideline/05_virtual_filesystem.md) — phần LocalShellBackend
-
-### Option B: Docker Container — AIO Sandbox
-
-**[agent-infra/sandbox](https://github.com/agent-infra/sandbox)** (AIO Sandbox):
-
-| Tính năng | Mô tả |
-|-----------|-------|
-| **All-in-One** | Browser + Shell + File System + MCP + VS Code Server trong 1 container |
-| **MCP-ready** | Expose capability qua MCP protocol — agent gọi trực tiếp |
-| **Persistent workspace** | File system giữ lại giữa các session |
-| **API access** | REST API cho shell execution, file management |
-
-Tích hợp với Deep Agents:
-- Chạy AIO Sandbox container
-- Viết custom tool hoặc MCP client để giao tiếp với sandbox API
-- Agent gọi `execute_in_sandbox(command)` thay vì `execute(command)`
-
-**Đọc**: [12_sandboxes.md](../deepagents-guideline/12_sandboxes.md) — phần Sandbox-as-Tool pattern
-
-### Option C: Cloud Sandbox
-
-| Provider | Loại | Đặc điểm nổi bật |
-|----------|------|-------------------|
-| **LangSmith Sandboxes** (GA) | MicroVM | Snapshot/fork, blueprints, auth proxy, tích hợp sẵn Deep Agents |
-| **E2B** | Firecracker MicroVM | Nhanh, popular, nhiều SDK |
-| **Daytona** | OCI container | Git-first, dev environment focus |
-
-**Đọc**: [12_sandboxes.md](../deepagents-guideline/12_sandboxes.md) — toàn bài
-
-**Template tham khảo**: `agentseek create deepagents/sandbox --checkout main`
+* **Ngôn ngữ**: Python 3.12+
+* **Package Manager**: `uv` (cực nhanh, chuẩn hóa virtualenv tự động)
+* **Framework Agent cốt lõi**: `deepagents` (LangChain ecosystem), `langchain-core`, `langgraph`
+* **Xử lý cú pháp code**: `tree-sitter`, `tree-sitter-python`
+* **Linter & Kiểm tra tĩnh**: `ruff`, `pyright`
+* **Kiểm thử**: `pytest`
+* **Quản lý Git cục bộ**: `GitPython`
+* **LLM Providers**: Hỗ trợ linh hoạt SiliconFlow (DeepSeek V3/R1), OpenAI, Anthropic, Google Gemini thông qua chuẩn tương thích LangChain.
 
 ---
 
-## Phase 8 cập nhật: H2/2026
+## 5. Quy chuẩn Thiết kế từng Bài Tutorial
 
-### Nội dung mới cần cover
+Mỗi bài tutorial từ Phase 1 đến Phase 9 sẽ được xây dựng theo một khuôn mẫu sư phạm nhất quán:
 
-| Feature | Từ đâu | Ý nghĩa cho Coding Agent |
-|---------|--------|--------------------------|
-| **Managed Deep Agents** | LangSmith Public Beta 08/2026 | Deploy bằng `mda deploy`, không cần tự host |
-| **LLM Gateway** | LangSmith Public Beta 08/2026 | Model fallback, rate limiting, PII redaction |
-| **Context Hub** | LangSmith | Version-controlled skills & instructions |
-| **v0.8 Personalized Memory** | Deep Agents 24/09/2026 | Mỗi developer có memory riêng |
-| **Streaming v3 GA** | LangChain v1.3 05/2026 | Content-block-centric, typed projections |
-| **PowerContext** | AgentSeek ecosystem | Handoff context giữa agents, seekdb |
-
-### Template tham khảo cho Phase 8
-
-- `deepagents/streaming` — Streaming v3 showcase
-- `deepagents/mcp` — MCP integration
-- `deepagents/powercontext` — PowerContext Memory + seekdb
-
----
-
-## Lộ trình 9 Phases (cập nhật)
-
-```mermaid
-flowchart LR
-    P1["Phase 1<br/>Hello Agent<br/>deepagents/default"] --> P2["Phase 2<br/>File Ops"]
-    P2 --> P25["Phase 2.5<br/>Codebase Intelligence<br/>LightRAG + AST"]
-    P25 --> P3["Phase 3<br/>Task Planning"]
-    P3 --> P4["Phase 4<br/>Code Execution<br/>3 Sandbox Options"]
-    P4 --> P5["Phase 5<br/>Sub-agents<br/>subagents-dynamic"]
-    P5 --> P6["Phase 6<br/>Safety"]
-    P6 --> P7["Phase 7<br/>Quality Gate<br/>langchain/rubric"]
-    P7 --> P8["Phase 8<br/>Production<br/>H2/2026 stack"]
-```
-
-### Chi tiết từng Phase (concept-only format)
-
-| Phase | Concept chính | Đọc tài liệu | Template tham khảo |
-|-------|-------------|--------------|-------------------|
-| **1. Hello Agent** | `create_deep_agent()`, custom tool, AgentSeek lifecycle, model provider config | [00](../deepagents-guideline/00_preparation.md), [01](../deepagents-guideline/01_deepagent_version_update.md), [03](../deepagents-guideline/03_agent_framework_to_agent_harness.md), [04](../deepagents-guideline/04_quickstart_first_deep_agent.md) | `deepagents/default` |
-| **2. File Ops** | 7 file tools, `FilesystemBackend`, auto-eviction, grep modes, `edit_file` vs `write_file` | [05](../deepagents-guideline/05_virtual_filesystem.md), [01](../deepagents-guideline/01_deepagent_version_update.md) | — |
-| **2.5 Codebase Intelligence** | AST indexing (tree-sitter), GraphRAG (LightRAG), hybrid retrieval, repo map pattern, MCP integration | [05](../deepagents-guideline/05_virtual_filesystem.md), [14](../deepagents-guideline/14_mcp.md), LightRAG docs | `deepagents/powercontext` |
-| **3. Task Planning** | `TodoListMiddleware`, middleware architecture, `SummarizationMiddleware`, cognitive anchor | [06](../deepagents-guideline/06_task_planning.md) | — |
-| **4. Code Execution** | LocalShell / Docker AIO / Cloud Sandbox, Sandbox-as-Tool, `CodeInterpreterMiddleware` | [05](../deepagents-guideline/05_virtual_filesystem.md), [12](../deepagents-guideline/12_sandboxes.md), [17](../deepagents-guideline/17_interpreters.md) | `deepagents/sandbox` |
-| **5. Sub-agents** | `task` tool, async subagents, dynamic subagents, fan-out/verify pattern | [07](../deepagents-guideline/07_subagents.md), [08](../deepagents-guideline/08_async_subagents.md), [18](../deepagents-guideline/18_dynamic_subagents.md) | `deepagents/subagents-dynamic` |
-| **6. Safety** | `FilesystemPermission`, whitelist pattern, HITL, `PolicyWrapper`, subagent inheritance | [13](../deepagents-guideline/13_filesystem_permissions.md), [11](../deepagents-guideline/11_human_in_the_loop.md) | — |
-| **7. Quality Gate** | `RubricMiddleware`, evidence tool, fail-closed, frozen criteria, two-model architecture | [15](../deepagents-guideline/15_grading_rubrics.md) | `langchain/rubric` |
-| **8. Production** | Streaming v3, Memory (v0.8), MCP, Skills, Managed Deep Agents, LLM Gateway, Context Hub | [16](../deepagents-guideline/16_streaming.md), [10](../deepagents-guideline/10_long_term_memory.md), [14](../deepagents-guideline/14_mcp.md), [09](../deepagents-guideline/09_skills.md) | `deepagents/streaming`, `deepagents/mcp` |
-
----
-
-## Kiến trúc tổng thể sau 9 Phases
-
-```mermaid
-flowchart TD
-    subgraph "User Interface (AgentSeek Frontend)"
-        UI["React UI + CopilotKit"]
-        UI -->|stream_events v3| STREAM["Streaming Layer"]
-    end
-
-    subgraph "Main Coding Agent"
-        STREAM --> AGENT["🧠 Main Agent<br/>create_deep_agent()"]
-        AGENT --> PLAN["📋 TodoListMiddleware"]
-        AGENT --> SUMMARY["📝 SummarizationMiddleware"]
-        AGENT --> MEMORY["💾 MemoryMiddleware + PowerContext"]
-        AGENT --> RUBRIC["✅ RubricMiddleware"]
-    end
-
-    subgraph "Codebase Intelligence (Phase 2.5)"
-        AGENT -->|"tool / MCP"| LIGHTRAG["🔍 LightRAG<br/>GraphRAG indexing"]
-        AGENT -->|"grep / glob"| BUILTIN["📁 Built-in File Tools"]
-        AGENT -->|"AST query"| TREESIT["🌳 tree-sitter<br/>Repo Map"]
-    end
-
-    subgraph "Sub-agents (Phase 5)"
-        AGENT -->|"task()"| RESEARCHER["🔍 Researcher"]
-        AGENT -->|"task()"| CODER["✏️ Coder"]
-        AGENT -->|"task()"| TESTER["🧪 Tester"]
-    end
-
-    subgraph "Execution (Phase 4)"
-        VFS["📁 VFS: FilesystemBackend"]
-        SANDBOX["🐳 Sandbox<br/>Local / Docker AIO / Cloud"]
-        INTERP["⚡ CodeInterpreter<br/>QuickJS"]
-    end
-
-    subgraph "External (Phase 8)"
-        MCP["🔌 MCP Servers<br/>GitHub, LSP"]
-        GATEWAY["🚪 LLM Gateway<br/>Fallback + Rate Limit"]
-        MANAGED["☁️ Managed Deep Agents"]
-    end
-
-    subgraph "Safety (Phase 6)"
-        PERM["🔒 FilesystemPermission"]
-        HITL["👤 Human-in-the-Loop"]
-    end
-
-    AGENT --> VFS
-    TESTER --> SANDBOX
-    AGENT --> INTERP
-    AGENT --> MCP
-    AGENT -.-> GATEWAY
-    PERM -.->|guards| VFS
-    HITL -.->|guards| AGENT
-```
-
----
-
-## Quyết định đã xác nhận
-
-| # | Quyết định | Trạng thái |
-|---|-----------|-----------|
-| 1 | 9 phases (thêm Codebase Intelligence) | ✅ |
-| 2 | AgentSeek templates | ✅ |
-| 3 | LightRAG cho codebase intelligence | ✅ Pending review |
-| 4 | 3 sandbox options (Local, Docker AIO, Cloud) | ✅ |
-| 5 | Concept-only format (không code skeleton) | ✅ |
-| 6 | Python target projects | ✅ |
-| 7 | AgentSeek frontend (React) | ✅ |
-| 8 | Phase 4 & 8 cập nhật H2/2026 | ✅ |
-
----
-
-## Câu hỏi mở (nếu có)
-
-1. **LightRAG storage backend**: Bạn muốn dùng backend nào cho LightRAG? (In-memory cho dev, hoặc seekdb theo PowerContext template?)
-
-2. **Thứ tự Phase 2.5**: Bạn có muốn Phase 2.5 (Codebase Intelligence) là optional/advanced, hay bắt buộc trước Phase 3?
-
-3. **Template strategy**: Bạn muốn:
-   - (a) Bắt đầu từ `deepagents/default` rồi thêm tính năng dần
-   - (b) Bắt đầu từ `deepagents/sandbox` (đã có sẵn coding agent + sandbox + UI)
-
----
-
-> [!IMPORTANT]
-> **Bước tiếp theo**: Sau khi bạn duyệt design V2 này, tôi sẽ **viết lại toàn bộ 9 tutorials** theo format concept-only, tích hợp AgentSeek, và cập nhật Phase 4 + Phase 8.
+1. **Lý thuyết chuyên sâu & So sánh thực tế**: Phân tích cặn kẽ "Tại sao cách làm cũ thất bại?", "Cách `oh-my-pi` giải quyết là gì?".
+2. **Lệnh cài đặt cụ thể**: Các lệnh shell rõ ràng (`uv add ...`).
+3. **Kiến trúc module & Hợp đồng dữ liệu**: Sơ đồ lớp, cấu trúc state TypedDict / Pydantic.
+4. **Code mẫu hoàn chỉnh cho từng module nhỏ**: Đầy đủ code, có type hints, docstring và comment giải thích cặn kẽ để bạn hiểu bản chất trước khi tự gõ lại.
+5. **Kịch bản thực hành kiểm thử (Hands-on Verification)**: Tạo môi trường giả lập (repo mẫu có bug) để bạn chạy thử nghiệm ngay.
+6. **Checklist tự nghiệm thu**: Tiêu chí rõ ràng để bạn kiểm tra xem code của mình đã hoạt động đúng như mong đợi chưa trước khi chuyển sang phase tiếp theo.
