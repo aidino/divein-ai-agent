@@ -93,8 +93,8 @@ Chi tiết từng hạng mục:
 | Hashline bridge: mint tag từ search hit, record seen-lines | `ast-grep.ts:287-339` | **Port** — *cây cầu sống còn nối Phase 2* |
 | **Block resolver `N*`** | `pi-ast/block.rs` + `pi-edit/.../block.rs` | **Port** — trả nợ `BLOCK_RESOLVER_UNAVAILABLE` Phase 2 |
 | Thông báo unresolved + suggestions (±64 dòng) | `messages.rs:304-404` | **Port** |
-| Multi-pattern OR, rule selector JSON, strictness override | `ast.rs` | **Defer** (§8) |
-| `xd://resolve` device, internal URL fs, parse cache LRU | `resolve.ts`, `parse_cache.rs` | **Defer** (§8) |
+| Multi-pattern OR, rule selector JSON, strictness override | `ast.rs` | **Defer** (§7) |
+| `xd://resolve` device, internal URL fs, parse cache LRU | `resolve.ts`, `parse_cache.rs` | **Defer** (§7) |
 
 ### 1.4 Vòng đời `ast_edit` hai pha — codemod không bao giờ ghi mù
 
@@ -180,7 +180,7 @@ Thí nghiệm trên `ast-grep-py==0.45.3` (kết quả tái lập được — s
 |---|---|---|---|
 | 1 | `node.replace(tpl)` trả `Edit` với `inserted_text` = **template thô**, metavariable KHÔNG được thay; `commit_edits` cũng chỉ splice template thô | Không thể dùng `replace()` cho codemod có metavar | Tự port `expand_template()` (mục 4.3) theo đúng `core/replacer.rs`: `$A` → text node bắt được; `$$$A` → **slice nguồn** node đầu→cuối; biến thiếu → bỏ trống |
 | 2 | Pattern rác (`def def def(`) **không raise** — `find_all` im lặng trả `[]` | Model gõ sai pattern → "No matches found" giả, tin rằng symbol không tồn tại (đúng bệnh "parse issues ≠ absence" mà prompt omp cảnh báo!) | Tự validate: thay metavar bằng định danh trung tính → parse → dò node `ERROR` (heuristic `_pattern_is_valid`, khảo sát 4/4 đúng) |
-| 3 | `find_all` không nhận `strictness` (luôn mặc định `smart`) | Không exposed các mức ast/cst/relaxed | Defer (§8) — `smart` là lựa chọn cân bằng, cũng là mặc định của omp |
+| 3 | `find_all` không nhận `strictness` (luôn mặc định `smart`) | Không exposed các mức ast/cst/relaxed | Defer (§7) — `smart` là lựa chọn cân bằng, cũng là mặc định của omp |
 
 Đây là bài học porting quan trọng ngang Quyết định 17–18 của Phase 2: **binding ≠ core**. Ba "lỗ hổng" trên đều là khoảng trống giữa API Rust (napi object đầy đủ) và wrapper Python mỏng — và cả ba đều phải bù ở tầng engine của ta, không phải tầng tool.
 
@@ -367,7 +367,7 @@ from dino_coding.tools.astlang import is_supported_file, resolve_language
 
 DEFAULT_FIND_LIMIT = 50  # ← ast.rs DEFAULT_FIND_LIMIT = ast-grep.ts DEFAULT_AST_LIMIT
 
-# Thư mục bỏ qua khi walk. ← thay ignore-walk (gitignore) của Rust; defer §8
+# Thư mục bỏ qua khi walk. ← thay ignore-walk (gitignore) của Rust; defer §7
 SKIP_DIRS = {
     ".git", ".hg", ".svn", "__pycache__", "node_modules", ".venv", "venv",
     ".mypy_cache", ".ruff_cache", ".pytest_cache", "dist", "build",
@@ -801,11 +801,12 @@ def rewrite_target(
     return result
 ```
 
-**Ba quyết định đáng tranh luận trong module này:**
+**Bốn quyết định đáng tranh luận trong module này:**
 
 1. **`rewrite_text` gộp overlap-check vào `apply_edits`** — tức hai rule mâu thuẫn làm nguyên lượt `rewrite_target` ném exception (bị tool bắt ở §4.4). omp hành xử y hệt: lỗi `apply_edits` từ `ast_edit_blocking:1178` lan lên thành lỗi cả call, không ghi file nào.
-2. **max_replacements mặc định None** (vô hạn) — đúng mặc định `u32::MAX` của ast.rs:968. Tool không lộ param này; chỉ `max_files=1000` được giữ như omp.
-3. **Tham số `writer`** chỉ phục vụ pytest (in-memory assertion, không đĩa). Production path là `open(..., newline="")` giữ nguyên kết thúc dòng như Phase 2.
+2. **File lỗi parse: rewrite SKIP, search vẫn quét — chủ đích, không phải bug.** `rewrite_target` gặp cây có ERROR node thì ghi parse error rồi `continue` bỏ qua file (ast.rs:1097-1105): path GHI không được phép hành động trên cây chỉ hiểu một phần — viết đè file người dùng từ hiểu sai cú pháp là thiệt hại thật, skip + báo lỗi là an toàn. Ngược lại `find_matches` (mục 4.2) ghi parse error nhưng vẫn find trên cây error-recovery (ast.rs:727-733 không `continue`): path ĐỌC nhận match ở vùng parse-đúng làm tín hiệu định vị, kèm cảnh báo để model tự chịu trách nhiệm kết luận. Đọc lẫn — ghi chặt: đúng nguyên tắc phân cấp rủi ro của omp.
+3. **max_replacements mặc định None** (vô hạn) — đúng mặc định `u32::MAX` của ast.rs:968. Tool không lộ param này; chỉ `max_files=1000` được giữ như omp.
+4. **Tham số `writer`** chỉ phục vụ pytest (in-memory assertion, không đĩa). Production path là `open(..., newline="")` giữ nguyên kết thúc dòng như Phase 2.
 
 *Danh sách `rules` phải duy nhất theo pattern — tool ở §4.4 chặn `Duplicate rewrite pattern` trước khi vào đây (port ast-edit.ts:256-262).*
 ### 4.4 Module `tools/ast_tools.py` — hai tool + cầu nối hashline
@@ -826,6 +827,7 @@ preview (apply=False, mặc định), gọi lại apply=True để ghi.
 from __future__ import annotations
 
 import os
+import posixpath
 from typing import Optional
 
 from langchain_core.tools import tool
@@ -834,16 +836,19 @@ from rich.markup import escape
 
 from dino_coding.tools.astfind import DEFAULT_FIND_LIMIT, find_matches
 from dino_coding.tools.astrewrite import RewriteConflict, rewrite_target
-from dino_coding.tools.hashline.text import normalize_to_lf, seen_lines_from_body, strip_bom
+from dino_coding.tools.hashline.text import (
+    file_hash, normalize_to_lf, seen_lines_from_body, strip_bom,
+)
 from dino_coding.tools.workspace import get_store, get_workspace
 
 console = Console()
 
 MAX_AST_FILES = 1000   # ← ast-edit.ts $envpos("PI_MAX_AST_FILES", 1000)
 PARSE_ERROR_CAP = 3    # ← capParseErrors: in 3 lỗi đầu, đếm phần còn lại
-_LAST_PREVIEW: dict[tuple, tuple[dict[str, int], int]] = {}
-# Preview gần nhất theo (rules, paths) — pha apply so với CHÍNH preview mà
-# model đã xem, thay cho closure queueResolveHandler của omp (resolve.ts).
+_LAST_PREVIEW: dict[tuple, tuple[dict[str, int], int, dict[str, str]]] = {}
+# Preview gần nhất theo (rules, paths): (counts, tổng thay đổi, {rel → tag}).
+# Pha apply so VỚI CHÍNH preview mà model đã xem theo HAI chiều — đếm match
+# VÀ content tag từng file — thay closure queueResolveHandler của omp (resolve.ts).
 
 AST_GREP_DESCRIPTION = """Structural code search via ast-grep. Use when syntax shape matters more than text (calls, declarations, language constructs).
 
@@ -895,6 +900,16 @@ def _split_targets(path_param: str) -> list[str]:
     return parts or ["."]
 
 
+
+def _ws_rel(target: str, rel: str, scope_is_file: bool) -> str:
+    """Engine trả path tương đối SCOPE; omp hiển thị tương đối WORKSPACE
+    (ast-grep.ts:301). Chuẩn hóa khi merge để mint tag mở đúng file với
+    directory-target ở mọi chiều sâu — không chỉ file ngay dưới root."""
+    norm = posixpath.normpath((target or ".").replace(os.sep, "/"))
+    if norm in ("", "."):
+        return rel
+    return norm if scope_is_file else f"{norm}/{rel}"
+
 @tool
 def ast_grep(
     pat: str,
@@ -934,6 +949,8 @@ def ast_grep(
         searched += result.files_searched
         limit_reached = limit_reached or result.limit_reached
         parse_errors.extend(result.parse_errors)
+        for match in result.matches:
+            match.path = _ws_rel(target, match.path, os.path.isfile(absolute))
         merged.extend(result.matches)
 
     merged.sort(key=lambda m: (m.path, m.start_line, m.start_column,
@@ -980,7 +997,7 @@ def ast_grep(
             output.extend(rows)
         else:
             output.append(f"[{rel}]")
-            output.extend("  (file unreadable)")
+            output.append("  (file unreadable)")
 
     if limit_reached:
         output.append("")
@@ -1016,10 +1033,10 @@ def ast_edit(ops: list[dict], paths: list[str], apply: bool = False) -> str:
         rules.append((pat, entry.get("out") or ""))
     if not paths:
         return "Error: `paths` must include at least one path."
-    targets: list[str] = []
+    targets: list[tuple[str, str]] = []  # (display, absolute)
     for target in paths:
         try:
-            targets.append(workspace.resolve(target))
+            targets.append((target, workspace.resolve(target)))
         except ValueError as error:
             return f"Error: {error}"
 
@@ -1030,15 +1047,21 @@ def ast_edit(ops: list[dict], paths: list[str], apply: bool = False) -> str:
         searched = 0
         errors: list[str] = []
         limit_reached = False
-        for absolute in targets:
+        for display, absolute in targets:
             res = rewrite_target(rules, absolute, apply=not dry_run,
                                  max_files=MAX_AST_FILES)
             searched += res.files_searched
             limit_reached = limit_reached or res.limit_reached
             errors.extend(res.parse_errors)
+            # path engine = tương đối scope → đổi về tương đối workspace
+            # (mint tag phải mở đúng file với directory-target sâu).
+            scope_is_file = os.path.isfile(absolute)
+            for change in res.changes:
+                change.path = _ws_rel(display, change.path, scope_is_file)
             changes.extend(res.changes)
             for path_, count in res.file_counts.items():
-                counts[path_] = counts.get(path_, 0) + count
+                key = _ws_rel(display, path_, scope_is_file)
+                counts[key] = counts.get(key, 0) + count
         return changes, counts, searched, errors, limit_reached
 
     # ---- Pha 1: dry-run preview (LUÔN) ← ast-edit.ts:285-292 ----
@@ -1059,11 +1082,13 @@ def ast_edit(ops: list[dict], paths: list[str], apply: bool = False) -> str:
         by_file.setdefault(change.path, []).append(change)
 
     output: list[str] = []
+    preview_tags: dict[str, str] = {}  # rel → content tag lúc render (stale check)
     for rel in sorted(by_file):
         absolute = os.path.join(workspace.root, rel)
         text = _read_normalized(absolute)
         if text is not None:
             tag = store.record(workspace.canonical_key(absolute), text)
+            preview_tags[rel] = tag
             output.append(f"[{rel}#{tag}]")
         else:
             output.append(f"[{rel}]")
@@ -1081,7 +1106,7 @@ def ast_edit(ops: list[dict], paths: list[str], apply: bool = False) -> str:
         output.extend(_parse_error_lines(parse_errors))
 
     if not apply:
-        _LAST_PREVIEW[(tuple(rules), tuple(targets))] = (counts, len(changes))
+        _LAST_PREVIEW[(tuple(rules), tuple(targets))] = (counts, len(changes), preview_tags)
         output.insert(0, "Staged as a proposal — files NOT modified yet. "
                          "Re-issue the same call with apply=true to apply these changes.")
         output.insert(1, "")
@@ -1092,13 +1117,24 @@ def ast_edit(ops: list[dict], paths: list[str], apply: bool = False) -> str:
     # ---- Stale check GIỮA HAI LẦN GỌI: so với preview model đã xem ----
     # ← thay closure queueResolveHandler của omp: nếu file đổi sau preview,
     # từ chối ghi và bắt preview lại, thay vì áp một diff người ta chưa duyệt.
+    # So HAI chiều: (a) đếm match, (b) content tag từng file — thay đổi ngoài
+    # vùng match (comment appends, formatter chạy ngang...) cũng bị bắt.
     staged = _LAST_PREVIEW.get((tuple(rules), tuple(targets)))
-    if staged is not None and (counts != staged[0] or len(changes) != staged[1]):
-        return ("Error: Preview is stale / no longer matches; nothing was "
-                "written. The staged preview expected "
-                f"{staged[1]} replacement(s) in {len(staged[0])} file(s), but "
-                f"the files now yield {len(changes)}. Re-run the preview "
-                "first, then apply.")
+    if staged is not None:
+        counts_changed = counts != staged[0] or len(changes) != staged[1]
+        tags_changed = False
+        for rel, expected_tag in staged[2].items():
+            live = _read_normalized(os.path.join(workspace.root, rel))
+            live_tag = file_hash(live).upper() if live is not None else None
+            if live_tag != expected_tag.upper():
+                tags_changed = True
+                break
+        if counts_changed or tags_changed:
+            reason = ("match counts changed" if counts_changed
+                      else "file contents changed since the preview")
+            return (f"Error: Preview is stale / no longer matches ({reason}); "
+                    "nothing was written. Re-run the preview first, then "
+                    "apply.")
     _LAST_PREVIEW.pop((tuple(rules), tuple(targets)), None)
 
     # ---- Pha 2: apply thật + stale check giữa 2 pha + fresh tags ----
@@ -1136,9 +1172,8 @@ ast_tools = [ast_grep, ast_edit]
 ```
 
 **Bốn điểm port đáng soi trong module này:**
-
 1. **`skip + limit + 1` rồi cắt lại** ở `ast_grep` (dòng `find_matches(..., limit=skip + DEFAULT_FIND_LIMIT + 1)`) — mô phỏng chính xác `retainedCapacity = skip + limit + 1` của `ast-grep.ts:91`: giữ dư 1 match để biết `limit_reached` mà không cần đếm toàn bộ.
-2. **Stale check có hai tầng**: giữa 2 pha trong cùng call (so `file_counts` dict — bắt "vẫn 5 thay đổi nhưng phân bố khác file"), và **giữa hai lần gọi** qua `_LAST_PREVIEW` (thay closure `queueResolveHandler` của omp): file đổi sau preview → từ chối ghi *trước khi viết*, bắt preview lại. So tổng số là không đủ.
+2. **Stale check có hai tầng**: giữa 2 pha trong cùng call (so `file_counts` dict — bắt "vẫn 5 thay đổi nhưng phân bố khác file"), và **giữa hai lần gọi** qua `_LAST_PREVIEW` (thay closure `queueResolveHandler` của omp) — so theo **HAI chiều: đếm match VÀ content tag từng file**. Chỉ so đếm là thiếu: comment append ngoài vùng match giữ nguyên số replacement nhưng nội dung khác — closure omp chặn theo "file đã đổi", nên chiều content tag (`{rel → tag}` lưu lúc preview, hash lại lúc apply) mới là bản dịch trung thành; sai lệch nào cũng từ chối ghi *trước khi viết*, bắt preview lại.
 3. **Notice hai pha nằm ở output[0]** của preview — model đọc dòng đầu tiên trước cả diff, không thể bỏ qua việc nó đang xem proposal.
 4. **Apply pass chạy lại từ đầu** (không replay preview) — đúng omp: file có thể đã đổi giữa hai lần gọi; chạy lại trên nội dung mới là cách duy nhất trung thực.
 ### 4.5 Module `tools/hashline/block.py` — block resolver cho ops `N*`
@@ -1276,11 +1311,13 @@ def block_range_at(code: str, path: str, line: int) -> Optional[BlockSpan]:
 
 
 def find_next_block(anchor_line: int, code: str, path: str) -> Optional[BlockSpan]:
-    """Block đa dòng ĐẦU TIÊN bắt đầu sau `anchor_line` (trong phạm vi quét).
-    ← dùng cho gợi ý retry khi dòng neo trống."""
-    total = len(code.split("\n"))
-    for candidate in range(anchor_line + 1,
-                           min(total, anchor_line + BLOCK_SUGGESTION_SCAN_LIMIT) + 1):
+    """Block đa dòng ĐẦU TIÊN bắt đầu sau `anchor_line`, trong phạm vi quét 64 dòng.
+    ← port find_next_block (block.rs:57-79): skip dòng trống trước khi parse."""
+    lines = code.split("\n")
+    last = min(len(lines), anchor_line + BLOCK_SUGGESTION_SCAN_LIMIT)
+    for candidate in range(anchor_line + 1, last + 1):
+        if not lines[candidate - 1].strip():
+            continue  # dòng trống không thể mở block — khỏi parse (block.rs:65)
         span = block_range_at(code, path, candidate)
         if span and span[0] == candidate and span[0] != span[1]:
             return span
@@ -1288,10 +1325,16 @@ def find_next_block(anchor_line: int, code: str, path: str) -> Optional[BlockSpa
 
 
 def find_enclosing_block(anchor_line: int, code: str, path: str) -> Optional[BlockSpan]:
-    """Block đa dòng GẦN NHẤT bao chứa `anchor_line`."""
-    for start in range(anchor_line, 0, -1):
+    """Block đa dòng GẦN NHẤT bao chứa `anchor_line`, quét tối đa 64 dòng lên trên.
+    ← port find_enclosing_block (block.rs:81-106): đi TỪ GẦN ĐẾN XA (rev),
+    chỉ nhận block bắt đầu TRƯỚC anchor (start < anchor) và chạm tới anchor."""
+    lines = code.split("\n")
+    first = max(1, anchor_line - BLOCK_SUGGESTION_SCAN_LIMIT)
+    for start in range(anchor_line - 1, first - 1, -1):
+        if not lines[start - 1].strip():
+            continue
         span = block_range_at(code, path, start)
-        if span and span[0] == start and span[0] != span[1] and span[1] >= anchor_line:
+        if span and span[0] == start and span[1] >= anchor_line and span[1] > start:
             return span
     return None
 
@@ -1422,7 +1465,7 @@ def resolve_block_edits(
     return lowered, warnings
 ```
 
-**Điểm mỏng cần biết khi nâng cấp:** `find_enclosing_block` quét tối đa 64 dòng lên trên thay vì dùng API `descendant_for_point_range` như omp (binding không cung cấp). Với file có hàm dài hơn 64 dòng, gợi ý enclosing có thể thiếu — edit vẫn bị chặn đúng (an toàn), chỉ message kém giàu. Ghi nhận ở §8.
+**Điểm mỏng cần biết khi nâng cấp:** cả hai hàm suggestion đều cap 64 dòng như omp (`block.rs:63` và `87-89`) nhưng mỗi ứng viên gọi `block_range_at` là MỘT lần parse lại cả file — omp parse một lần rồi đi node (`descendant_for_point_range`, binding không cung cấp). File vài nghìn dòng neo sâu vẫn đáp ứng đủ nhanh (tối đa 64 parse); khi nào chậm thì parse một lần rồi leo bằng `parent()`/`ancestors()`. Với hàm dài hơn 64 dòng, gợi ý enclosing có thể thiếu — edit vẫn bị chặn đúng (an toàn), chỉ message kém giàu. Ghi nhận ở §7.
 ### 4.6 Nối resolver vào `messages.py` + `patcher.py`
 
 **Bước 1 — thêm 4 hàm message vào cuối `tools/hashline/messages.py`** (mọi chuỗi model-facing tiếng Anh — quy chuẩn từ Phase 2). Port `messages.rs:304-404`, giản lược phần `format_anchored_context` (Phase 2 chưa có hàm đó; context dòng lỗi sẽ về ở Phase LSP):
@@ -1831,7 +1874,7 @@ def test_block_range_at_rejects_bad_anchors():
     assert block_range_at(SAMPLE, "app.py", 5) == (5, 5)  # statement 1 dòng;
     # resolve_block_edits chặn case này qua single-line error — không phải ở đây
     assert block_range_at(SAMPLE, "app.py", 7) is None   # dòng trống
-    assert block_range_at(SAMPLE, "app.py", 12) is None  # dòng lùi sắt — closer
+    assert block_range_at(SAMPLE, "app.py", 12) is None  # dòng trống cuối class — span dừng ở 11
     assert block_range_at(SAMPLE, "data.bin", 4) is None # ngôn ngữ không hỗ trợ
     # chuỗi hở mới sinh ERROR node — `def broken(:` + pass bị recovery âm thầm
     assert block_range_at("def broken(:\n    print('a'\n", "b.py", 1) is None
@@ -1947,6 +1990,43 @@ def test_ast_edit_stale_preview_detected(agent_workspace):
     assert (agent_workspace / "app.py").read_text() == "print('gone')\n"
 
 
+def test_ast_edit_stale_detected_when_only_content_changed(agent_workspace):
+    """Stale theo CONTENT TAG: comment appends ngoài vùng match không đổi
+    số replacement nhưng vẫn phải bị chặn — closure omp chặn theo file đổi,
+    không theo diff đếm được."""
+    write_file(agent_workspace, "app.py", SAMPLE)
+    ast_edit.invoke({"ops": [{"pat": "print($$$)", "out": "log($$$)"}],
+                     "paths": ["app.py"]})                      # preview
+    with open(agent_workspace / "app.py", "a", encoding="utf-8", newline="") as fh:
+        fh.write("# review hotfix\n")   # cùng số match, nội dung khác
+    out = ast_edit.invoke({"ops": [{"pat": "print($$$)", "out": "log($$$)"}],
+                           "paths": ["app.py"], "apply": True})
+    assert out.startswith("Error: Preview is stale")
+    assert "contents changed" in out
+    assert "log(" not in (agent_workspace / "app.py").read_text()
+
+
+def test_ast_grep_directory_target_deep_mints_correct_path(agent_workspace):
+    """Regression: engine trả path tương đối SCOPE; tool phải đổi về tương đối
+    workspace trước khi mint tag — directory-target sâu hơn 1 cấp từng mở
+    sai file (hiện 'file unreadable' thay vì match row)."""
+    write_file(agent_workspace, "pkg/deep/app.py", SAMPLE)
+    out = ast_grep.invoke({"pat": "print($$$)", "path": "pkg/deep"})
+    assert out.splitlines()[0].startswith("[pkg/deep/app.py#")
+    assert "unreadable" not in out
+    assert "10:print(x)" in out
+
+
+def test_ast_edit_directory_target_deep_applies(agent_workspace):
+    write_file(agent_workspace, "pkg/deep/app.py", SAMPLE)
+    applied = ast_edit.invoke({
+        "ops": [{"pat": "print($$$ARGS)", "out": "log($$$ARGS)"}],
+        "paths": ["pkg/deep"], "apply": True,
+    })
+    assert "[pkg/deep/app.py#" in applied
+    assert "log(x)" in (agent_workspace / "pkg/deep/app.py").read_text()
+
+
 def test_ast_edit_duplicate_pattern_rejected(agent_workspace):
     write_file(agent_workspace, "app.py", SAMPLE)
     out = ast_edit.invoke({
@@ -1980,7 +2060,7 @@ def test_edit_tool_block_op_now_resolves(agent_workspace):
     assert "total = a + b" not in text
 ```
 
-Chạy: `uv run pytest tests/test_ast.py -q` — kỳ vọng **27 passed**. Nếu `test_ast_grep_search_hit_is_edit_anchor` đỏ với thông báo "never displayed": quay lại kiểm tra `_read_normalized` có ghi snapshot bằng text đã chuẩn hóa (note đầu mục 4.4) — đấy là bug tag-không-khớp điển hình.
+Chạy: `uv run pytest tests/test_ast.py -q` — kỳ vọng **35 passed**. Nếu `test_ast_grep_search_hit_is_edit_anchor` đỏ với thông báo "never displayed": quay lại kiểm tra `_read_normalized` có ghi snapshot bằng text đã chuẩn hóa (note đầu mục 4.4) — đấy là bug tag-không-khớp điển hình.
 ---
 
 ## 6. Kịch bản Nghiệm thu Terminal (cần LLM)
@@ -2005,6 +2085,21 @@ Chạy: `uv run pytest tests/test_ast.py -q` — kỳ vọng **27 passed**. Nế
 
 Đạt: model dùng `PUT N*:` (không đếm dòng tay!), engine phân giải span hàm, edit thành công. So sánh trực tiếp với Phase 2: cùng lệnh này từng bị chặn `BLOCK_RESOLVER_UNAVAILABLE`.
 
+**Kịch bản 4 — Migration Weekend (nghiệm thu phức tạp, không cần LLM).**
+
+Kịch bản 1–3 chạm từng tool đơn lẻ; kịch bản này chạy **toàn bộ dây chuyền trên một mini-project thật** (`legacy_shop/`: 3 file Python + 1 TypeScript + 1 file draft lỗi cú pháp + 1 file ẩn) theo đúng dòng thời gian một migration: recon bằng structural search → sửa theo search-hit không read lại → codemod hai pha đa file → file bị sửa tay giữa preview/apply (stale phải chặn) → apply → xóa hàm deprecated bằng `CUT N*` trên 2 file → đổi import line theo → rename trên TypeScript → verify bằng import thật + grep xác nhận 0 match cũ.
+
+Bản tự chạy (28 kiểm tra tự chấm PASS/FAIL) đã có sẵn:
+
+```bash
+uv run python scripts/acceptance_phase25.py     # E2E: 8 bước, workspace tạm
+uv run python scripts/demo_ast.py               # engine thuần: từng dataclass trung gian
+```
+
+Điểm nghiệm thu riêng có ở kịch bản này mà 1–3 không có: (a) **multi-line call** — `$$$ARGS` phải thay bằng *source slice* giữ nguyên separator + trailing comma, không phải join `", "`; (b) **stale theo nội dung** — comment append ngoài vùng match không đổi số replacement nhưng vẫn phải bị từ chối; (c) **file lỗi parse**: rewrite skip + cảnh báo nhưng search vẫn quét; (d) **import line gãy sau khi xóa def** — codemod import statement là bước follow-through bắt buộc của một migration thật.
+
+Kịch bản này bắt được 2 bug thật mà 32 test đơn nguyên bỏ sót: mint tag mở sai file với directory-target sâu hơn 1 cấp (engine trả path tương đối scope), và stale check chỉ so đếm match.
+
 ## 7. Những gì đã Defer và Điều kiện Nâng cấp
 
 | Hạng mục | Nguồn omp | Nâng cấp khi nào |
@@ -2023,8 +2118,8 @@ Chạy: `uv run pytest tests/test_ast.py -q` — kỳ vọng **27 passed**. Nế
 
 ## 8. Checklist Nghiệm thu
 
-- [ ] 1. `uv run pytest tests/ -q` — **586 pass** (559 hiện hành + 27 mới), 0 fail.
-- [ ] 2. `uv run pytest tests/test_ast.py -q` — 27/27 xanh ở lần chạy đầu sau khi gõ xong module (không chỉnh test).
+- [ ] 1. `uv run pytest tests/ -q` — **594 pass** (559 hiện hành + 35 mới), 0 fail.
+- [ ] 2. `uv run pytest tests/test_ast.py -q` — 35/35 xanh ở lần chạy đầu sau khi gõ xong module (không chỉnh test).
 - [ ] 3. Probe môi trường mục 2 in ra `captured B = c`.
 - [ ] 4. `ast_grep` với pattern rác (`def def def(`) trả "No matches found" kèm parse hint — không im lặng.
 - [ ] 5. Kết quả `ast_grep` có header `[path#TAG]`; dòng đầu match có marker `*`; dòng giữa của match nhiều dòng có số dòng tăng dần.
@@ -2037,7 +2132,8 @@ Chạy: `uv run pytest tests/test_ast.py -q` — kỳ vọng **27 passed**. Nế
 - [ ] 12. Đường dẫn lậu (`../../etc`) bị PathPolicy chặn ở CẢ HAI tool ast.
 - [ ] 13. Prompt hệ thống có mục "## 4. STRUCTURAL SEARCH & REWRITE"; không rò rỉ meta (không nhắc "omp", "Rust port", "tutorial").
 - [ ] 14. Ba kịch bản terminal mục 6 đạt trong tối đa 2 lượt tool mỗi kịch bản.
+- [ ] 15. `uv run python scripts/acceptance_phase25.py` — kết thúc "mọi kiểm tra PASS", exit code 0; `uv run python scripts/demo_ast.py` chạy hết 5 bước không traceback.
 
 ---
 
-*(Khi cả 14 mục trên khớp, Phase 2.5 đóng sổ. Phase tiếp theo — **Phase 3: Cognitive Anchor** (todo phân cấp + compaction tự nén ngữ cảnh) — bắt đầu từ `todo.ts` và `compaction.ts` của omp. Lúc đó agent của bạn đã có đủ bộ ba: sửa an toàn — tìm thông minh — ghi nhớ việc cần làm.)*
+*(Khi cả 15 mục trên khớp, Phase 2.5 đóng sổ. Phase tiếp theo — **Phase 3: Cognitive Anchor** (todo phân cấp + compaction tự nén ngữ cảnh) — bắt đầu từ `todo.ts` và `compaction.ts` của omp. Lúc đó agent của bạn đã có đủ bộ ba: sửa an toàn — tìm thông minh — ghi nhớ việc cần làm.)*

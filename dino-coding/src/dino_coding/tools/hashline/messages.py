@@ -218,3 +218,69 @@ def format_mismatch_message(
 
 def format_out_of_range(line: int, total: int) -> str:
     return f"Line {line} does not exist (file has {total} lines)"
+
+
+# ---- block resolver (Phase 2.5) ← port messages.rs:304-404 ----
+
+def block_unresolved_message(
+    line: int, block_form: str, fallback: str,
+    next_block: Optional[tuple[int, int]],
+    enclosing_block: Optional[tuple[int, int]],
+) -> str:
+    """Block-anchored replace/cut không phân giải được. ← messages.rs:304"""
+    if next_block is not None:
+        message = (
+            f"Line {line} is blank; no syntactic block can begin there. "
+            f"The next multi-line block begins at line {next_block[0]} and ends "
+            f"at line {next_block[1]}. Retry `{block_form.replace(str(line), str(next_block[0]), 1)}`."
+        )
+    else:
+        message = (
+            f"`{block_form}` could not resolve a syntactic block beginning on "
+            f"line {line} (unsupported language, blank/closer line, or parse "
+            f"error). Use `{fallback}` with explicit lines."
+        )
+    if enclosing_block is not None:
+        retry = block_form.replace(str(line), str(enclosing_block[0]), 1)
+        message += (
+            f" The nearest enclosing multi-line block begins at line "
+            f"{enclosing_block[0]} and ends at line {enclosing_block[1]}; "
+            f"use `{retry}` to target it."
+        )
+    return message
+
+
+def block_single_line_message(
+    line: int, block_form: str, enclosing_block: Optional[tuple[int, int]]
+) -> str:
+    """Neo rơi vào statement một dòng. ← messages.rs:887"""
+    message = (
+        f"`{block_form}` resolved a single-line block — line {line} is a bare "
+        "statement, not the opening line of a multi-line construct. For only "
+        "this statement use the plain line form."
+    )
+    if enclosing_block is not None:
+        message += (
+            f" The nearest enclosing multi-line block begins at line "
+            f"{enclosing_block[0]} and ends at line {enclosing_block[1]}."
+        )
+    return message
+
+
+def block_closer_lowered_warning(block_form: str, plain_form: str) -> str:
+    """Neo là dòng đóng ngoặc → hạ thành op dòng thường. ← messages.rs:371"""
+    return (
+        f"`{block_form}` anchors on a closing delimiter, so it was applied as "
+        f"plain `{plain_form}`. Anchor on the line that OPENS the construct."
+    )
+
+
+def block_unresolved_lowered_warning(
+    block_form: str, line: int, plain_form: str
+) -> str:
+    """`PUT >N*` không giải được → hạ thành `PUT >N`. ← messages.rs:378"""
+    return (
+        f"`{block_form}` could not resolve a syntactic block on line {line}, so "
+        f"it was applied as plain `{plain_form}`. Verify the landing line; "
+        "anchor on a line that OPENS a construct."
+    )

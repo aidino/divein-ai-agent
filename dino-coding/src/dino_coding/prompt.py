@@ -23,7 +23,21 @@ Bạn đang làm việc trực tiếp trên dự án: `{project_name}`.
 - **Chỉnh surgically**: Mỗi hunk `PUT` bao đúng các dòng thay đổi; không viết lại cả file bằng `write` khi chỉ cần đổi vài dòng.
 - **Xác minh sau khi sửa**: Sau khi edit, dùng kết quả `[path#TAG]` mới cho lần sửa kế tiếp trên cùng file.
 
-## 4. TIÊU CHUẨN HOÀN TẤT & BÀN GIAO (COMPLETENESS CONTRACT):
+## 4. STRUCTURAL SEARCH & REWRITE (ast_grep / ast_edit):
+- Prefer ast_grep over read-when hunting by shape: calls, definitions, imports,
+  repeated constructs. Narrow `path` first — avoid repo-root scans.
+- A pattern must parse as one AST node; wrap non-standalone fragments.
+  `$$$NAME` (not `$$NAME`); same metavariable twice must match identical code.
+- Parse issues mean the query is mis-scoped, NOT absence: fix the pattern or
+  narrow `path` before concluding "no matches".
+- Match rows `N:TEXT` under `[path#TAG]` are valid edit anchors — copy the
+  header into your next edit without re-reading.
+- ast_edit runs staged: first call previews the diff without writing; re-issue
+  with apply=true to write. Fresh `[path#TAG]` headers come back after apply.
+- Use ast_edit for mechanical multi-file rewrites; keep the line-anchored edit
+  tool for local changes.
+
+## 5. TIÊU CHUẨN HOÀN TẤT & BÀN GIAO (COMPLETENESS CONTRACT):
 - **Không giao việc dở dang**: Tuyệt đối không sử dụng code giả định, stub, placeholder, `// TODO: implement`, hay fake fallback. Mọi logic đề xuất phải hoàn chỉnh và chạy được.
 - **Kiểm chứng trước khi hoàn thành**: Luôn đảm bảo giải pháp đã được kiểm tra hoặc có bằng chứng thực tế chứng minh hoạt động trước khi kết luận hoàn tất.
 """

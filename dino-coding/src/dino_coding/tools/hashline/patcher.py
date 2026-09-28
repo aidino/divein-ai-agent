@@ -12,6 +12,7 @@ from typing import TYPE_CHECKING, Optional
 
 from dino_coding.tools.hashline import messages
 from dino_coding.tools.hashline.apply import apply_edits
+from dino_coding.tools.hashline.block import BlockUnresolved, resolve_block_edits
 from dino_coding.tools.hashline.diffpreview import compact_preview
 from dino_coding.tools.hashline.input import Patch, PatchSection
 from dino_coding.tools.hashline.store import Clipboard, EditStore
@@ -170,9 +171,14 @@ def _stage_section(
     canonical = workspace.canonical_key(absolute)
 
     if any(isinstance(edit, EditBlock) for edit in parsed.edits):
-        raise _reject(
-            f"{section.path}: {messages.BLOCK_RESOLVER_UNAVAILABLE}"
-        )
+        try:
+            lowered, block_warnings = resolve_block_edits(
+                parsed.edits, read.text, section.path
+            )
+        except BlockUnresolved as error:
+            raise _reject(f"{section.path}: {error}")
+        parsed.edits = lowered
+        parsed.warnings = parsed.warnings + block_warnings
 
     expected = section.file_hash
     live_matches = file_hash(read.text).upper() == expected.upper()

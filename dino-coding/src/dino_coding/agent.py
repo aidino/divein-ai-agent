@@ -9,6 +9,7 @@ from langgraph.graph.state import CompiledStateGraph
 from dino_coding.config import config
 from dino_coding.prompt import build_coding_system_prompt
 from dino_coding.tools.base import initial_tools
+from dino_coding.tools.ast_tools import ast_tools
 from dino_coding.tools.editor import edit
 from dino_coding.tools.fs import file_tools
 
@@ -43,7 +44,7 @@ def create_my_coding_agent() -> CompiledStateGraph:
 
     agent: CompiledStateGraph = create_deep_agent(
         model=llm,
-        tools=[*initial_tools, *file_tools, edit],
+        tools=[*initial_tools, *file_tools, edit, *ast_tools],
         system_prompt=system_prompt,
         backend=backend,
     )
