@@ -1,118 +1,143 @@
-# 🛠️ Design Report V3: Xây dựng Coding Agent Đỉnh cao — Học hỏi từ Kiến trúc Thực chiến của oh-my-pi
+# 🛠️ Design Report V3: Xây dựng Coding Agent Thực chiến — Chuẩn hóa 100% theo oh-my-pi trên nền DeepAgents
 
-> **Phiên bản**: V3.0 (Cập nhật: 28/09/2026)  
-> **Nền tảng**: Python 3.12+, `uv`, `deepagents` (LangChain ecosystem)  
-> **Cảm hứng kiến trúc**: `oh-my-pi` (omp) — Coding Agent hàng đầu với ~80k dòng Rust + TypeScript/Bun  
-> **Mục tiêu**: Cung cấp khung thiết kế kiến trúc chuẩn mực và hướng dẫn từng bước để bạn **tự tay code hoàn chỉnh** một coding agent chuyên nghiệp.
-
----
-
-## 1. Lời mở đầu: Tại sao V2 chưa đủ và Bài học từ oh-my-pi
-
-Ở phiên bản V2, chúng ta đã tiếp cận việc xây dựng agent bằng cách ghép các tính năng có sẵn của `deepagents`. Tuy nhiên, kết quả vẫn mang tính **"chung chung"** — nó giống một chatbot biết gọi tool hơn là một **Coding Agent thực thụ** có thể giải quyết các tác vụ phần mềm phức tạp trong thực tế.
-
-Khi phân tích sâu codebase của **`oh-my-pi` (omp)** — một coding agent mã nguồn mở được tối ưu hóa khắt khe trên hàng loạt benchmark (Grok, Gemini, MiniMax) và sử dụng hàng ngày bởi các kỹ sư — chúng ta nhận diện được **6 nút thắt sống còn (The Harness Problem)** mà một coding agent bắt buộc phải giải quyết:
-
-```
-┌────────────────────────────────────────────────────────────────────────┐
-│                   6 BÀI HỌC KIẾN TRÚC TỪ OH-MY-PI                      │
-├────────────────────────────────┬───────────────────────────────────────┤
-│ 1. Sửa code mong manh          │ • oh-my-pi: Hashline & Anchor editing │
-│    (Brittle String Replace)    │ • DeepAgents: Line-anchored patch     │
-├────────────────────────────────┼───────────────────────────────────────┤
-│ 2. Thiếu phản hồi từ IDE       │ • oh-my-pi: LSP writethrough          │
-│    (No Compiler Feedback)      │ • DeepAgents: Post-edit linter/LSP hook│
-├────────────────────────────────┼───────────────────────────────────────┤
-│ 3. Xung đột ghi đè Subagent   │ • oh-my-pi: Git Worktree per subagent │
-│    (Workspace Pollution)       │ • DeepAgents: GitWorktreeBackend      │
-├────────────────────────────────┼───────────────────────────────────────┤
-│ 4. Sandbox thụ động            │ • oh-my-pi: Persistent eval + bridge  │
-│    (Passive Execution)         │ • DeepAgents: REPL có loopback tool   │
-├────────────────────────────────┼───────────────────────────────────────┤
-│ 5. Lệch hướng khi stream       │ • oh-my-pi: Time-Traveling Rules (TTSR│
-│    (Stream Hallucination)      │ • DeepAgents: Stream abort & reinject │
-├────────────────────────────────┼───────────────────────────────────────┤
-│ 6. Thiên kiến của 1 mô hình   │ • oh-my-pi: Dual-Model Advisor        │
-│    (Single-Model Blindspot)    │ • DeepAgents: RubricEvaluator LLM     │
-└────────────────────────────────┴───────────────────────────────────────┘
-```
+> **Phiên bản**: V3.1 (Cập nhật: 28/09/2026)  
+> **Framework Agent duy nhất**: `deepagents` (LangChain ecosystem, Python 3.12+, `uv`)  
+> **Triết lý thiết kế**: Bỏ toàn bộ các khái niệm chung chung của tutorial cũ (LightRAG, AgentSeek...). Chuẩn hóa 100% công cụ và kiến trúc theo **`oh-my-pi` (omp)**.  
+> **Nguyên tắc triển khai**:
+> - Công cụ nào của `oh-my-pi` dùng lại được ➔ **Hướng dẫn tích hợp trực tiếp** (ví dụ: `ast-grep`, `git worktree`, Language Server).
+> - Thành phần nào của `oh-my-pi` viết bằng Rust/TypeScript cần chuyển ngữ ➔ **Hướng dẫn porting sang Python** (ví dụ: Hashline editing engine, Loopback IPC bridge, Time-Traveling Stream Rules).
 
 ---
 
-## 2. Bảng Ánh xạ Kiến trúc: oh-my-pi ➔ DeepAgents (Python)
+## 1. Bản chất cốt lõi: Tại sao phải follow 100% theo oh-my-pi?
 
-Toàn bộ tinh hoa của `oh-my-pi` được chuẩn hóa và ánh xạ sang hệ sinh thái Python + `deepagents` như sau:
+Trong thế giới Coding Agent, có một khoảng cách rất lớn giữa:
+- **Chatbot biết gọi tool (Generic Agent)**: Đọc file bằng cách `cat` toàn bộ, sửa code bằng `str_replace` mong manh, nhồi nhét RAG vector chung chung, chạy lệnh xong in text, subagent chạy chung một thư mục làm bẩn git.
+- **Coding Agent chuyên nghiệp thực thụ (`oh-my-pi`)**: Coi IDE và hệ thống tệp là thực thể sống, sửa code dựa trên mỏ neo cú pháp, bắt lỗi compiler/linter tức thì, chạy code có cầu nối loopback, và cô lập subagent bằng Git Worktree.
 
-| Trụ cột kỹ thuật | Triển khai trong `oh-my-pi` | Hiện thực hóa trong Tutorial V3 (`deepagents` + Python) |
-|---|---|---|
-| **Lõi Runtime & Ngữ cảnh** | `agent-loop.ts`, `AppendOnlyContext`, dialect normalization | `create_deep_agent()`, quản lý tin nhắn bất biến, prompt thích ứng theo provider |
-| **Phẫu thuật File (VFS)** | `crates/pi-edit` (hashline anchors), `read-summary.ts` | 7 File tools VFS + `AnchorEditEngine` (mỏ neo dòng/nội dung), Smart Read phân trang |
-| **Codebase Intelligence** | `ast-grep`, `ast-edit`, tree-sitter | `tree-sitter` sinh Repo Map toàn dự án + LightRAG MCP server truy vấn đồ thị ngữ nghĩa |
-| **Bộ neo nhận thức (Task)** | `todo.ts` (trạng thái phân cấp, cây task trực quan) | `TodoListMiddleware` + `SummarizationMiddleware` tự nén khi đạt 85% context |
-| **Thực thi mã có Cầu nối** | Persistent Python/Bun kernel, bridge gọi ngược lại tool | Persistent Python REPL (Local/Docker) + Loopback bridge cho phép test script gọi tool Agent |
-| **Cô lập Subagents** | `task/worktree.ts` (mỗi subagent chạy trên 1 git worktree) | Dynamic Subagents + `GitWorktreeBackend` riêng cho từng subagent, hợp nhất qua PR/diff |
-| **Nối dây IDE (LSP)** | `lsp/writethrough.ts` (bắt diagnostics ngay sau ghi file) | Post-Write Diagnostic Hook kết nối `ruff`/`pyright`, tự động kích hoạt vòng lặp Self-Healing |
-| **Can thiệp Stream & Bảo mật** | TTSR (hủy token stream giữa chừng, ép retry với luật) | LangChain v1.3 stream filtering, `PolicyWrapper`, HITL modal phê duyệt lệnh nguy hiểm |
-| **Cố vấn song song (Advisor)** | `advisor/index.ts` (model phụ đọc từng turn, cảnh báo P0-P3)| Two-model Architecture: Model chính code, Model phụ thẩm định qua `RubricMiddleware` |
-| **Ký ức & Học hỏi liên tục** | `retain`, `learn`, `recall`, SQLite / Mnemopi | LangGraph Store với namespace `(project_id, user_id)`, trích xuất bài học sau mỗi task |
+Bằng cách giữ **`deepagents`** làm bộ khung điều phối vòng lặp và thay thế toàn bộ công cụ ngoại vi bằng giải pháp của **`oh-my-pi`**, chúng ta sẽ xây dựng được một Coding Agent có sức mạnh thực chiến tương đương các agent hàng đầu thế giới (như Cursor, Claude Code, Pi).
 
 ---
 
-## 3. Lộ trình 10 Phases Toàn diện (V3)
+## 2. Bảng Phân loại: Dùng lại (Reuse) vs Chuyển ngữ (Porting) từ oh-my-pi
+
+Dưới đây là chiến lược chi tiết cho từng hệ thống con được bóc tách từ `oh-my-pi`:
+
+| Hệ thống con trong `oh-my-pi` | Bản gốc trong `oh-my-pi` | Chiến lược trong Tutorial V3 (Python + `deepagents`) | Cách thực hiện cụ thể |
+|---|---|---|---|
+| **1. Runtime & Context Core** | `packages/agent/src/agent-loop.ts`, `append-only-context.ts` | **Giữ `deepagents`** + Porting logic Append-Only | Sử dụng `create_deep_agent()`. Thiết kế state quản lý tin nhắn bất biến, chống trôi ngữ cảnh (Context Drift). |
+| **2. Phẫu thuật File (VFS)** | `crates/pi-edit` (Rust), `read-summary.ts` | **Porting sang Python** | Viết module `src/tools/hashline.py`: Đánh số dòng kèm hash nội dung ngắn (`*12#a4b\|`). Agent sửa code theo mỏ neo dòng/hash. Nếu file bị đổi ngầm, mỏ neo lệch ➔ từ chối ghi đè để bảo vệ code. |
+| **3. Codebase Intelligence** | `packages/coding-agent/src/tools/ast-grep.ts`, `ast-edit.ts` | **Dùng lại (Reuse) `ast-grep`** | **Loại bỏ hoàn toàn LightRAG**. Cài đặt CLI `ast-grep` (`sg`) hoặc `ast-grep-py` (công cụ Rust mở của Herrington Darkholme mà `oh-my-pi` sử dụng). Bọc thành 2 tool `ast_grep` và `ast_edit` tìm/sửa code theo cây cú pháp AST. |
+| **4. Task Planning & Context Compaction** | `packages/coding-agent/src/tools/todo.ts`, `compaction.ts` | **Tận dụng `deepagents`** | Kích hoạt `TodoListMiddleware` làm bộ neo nhận thức bên ngoài (External Cognitive Anchor) và `SummarizationMiddleware` tự động nén context khi đạt 85% cửa sổ token. |
+| **5. Thực thi mã có Cầu nối (Loopback)** | `packages/coding-agent/src/eval/` (runner.py + bridge) | **Porting cơ chế Loopback sang Python** | Dựng Persistent Python REPL chạy ngầm qua NDJSON. Tạo đối tượng `agent_bridge` được tiêm sẵn vào môi trường thực thi, cho phép code test gọi ngược lại `agent_bridge.read_file(...)`. |
+| **6. Cô lập Subagents** | `packages/coding-agent/src/task/worktree.ts`, `structured-subagent.ts` | **Dùng lại Git Worktree** | Sử dụng lệnh `git worktree add -b <subagent-branch>` (qua `GitPython` hoặc `subprocess`) để mỗi subagent làm việc trên một thư mục nhánh hoàn toàn độc lập, trả về JSON có cấu trúc. |
+| **7. Nối dây IDE (LSP Writethrough)** | `packages/coding-agent/src/lsp/writethrough.ts` | **Dùng lại LSP Server (`pyright`/`ruff`)** | Viết Post-Tool Hook: Ngay sau khi tool `edit_file` chạy xong, kích hoạt linter/LSP kiểm tra diagnostics. Nếu phát hiện syntax error, tự động inject diagnostics để Agent tự sửa (Self-Healing Loop). |
+| **8. Ngắt dòng theo luật (TTSR)** | `packages/coding-agent/src/stream/` (Time-Traveling Stream Rules) | **Porting sang Python** | Bắt token stream của LangChain theo thời gian thực bằng regex. Nếu Agent phát ra lệnh cấm (như `rm -rf`, lộ API key), ngắt stream ngay lập tức, bơm luật phạt và yêu cầu sinh lại. |
+| **9. Cố vấn Độc lập (Advisor)** | `packages/coding-agent/src/advisor/index.ts`, `review.ts` | **Porting kiến trúc 2 mô hình sang Python** | Thiết lập mô hình thứ 2 (Advisor LLM) chạy song song hoặc thông qua `RubricMiddleware` để thẩm định từng bước đi của Agent chính, xếp hạng rủi ro P0-P3. |
+| **10. Ký ức Dài hạn** | `packages/coding-agent/src/memories/` (`retain`, `learn`, `recall`) | **Porting bộ ba công cụ sang Python** | Triển khai 3 tool `retain` (lưu fact vào SQLite/JSON dự án), `learn` (ghi bài học kiến trúc), và `recall` (truy xuất bài học tương ứng cho tác vụ mới). |
+
+---
+
+## 3. Sơ đồ Kiến trúc Tổng thể (Toàn bộ theo chuẩn oh-my-pi)
 
 ```mermaid
 flowchart TD
-    P0["Phase 00: Design Report V3<br/>Kiến trúc tổng thể & Bản đồ ánh xạ"] --> P1["Phase 01: Hello Harness & Context Core<br/>create_deep_agent, Dialect & Context Bất biến"]
-    P1 --> P2["Phase 02: Robust VFS & Hashline Editing<br/>Smart Read + Anchor-based Patching"]
-    P2 --> P25["Phase 02.5: Codebase Intelligence<br/>AST Repo Map tree-sitter + LightRAG"]
-    P25 --> P3["Phase 03: Cognitive Anchor & Planning<br/>TodoListMiddleware + Context Compaction"]
-    P3 --> P4["Phase 04: Execution & Loopback Bridge<br/>Persistent REPL + Sandbox-to-Agent IPC"]
-    P4 --> P5["Phase 05: Subagents & Git Worktrees<br/>Branch Isolation + Structured JSON Yields"]
-    P5 --> P6["Phase 06: IDE Wiring & Self-Healing<br/>LSP Diagnostics Hook + Auto Error Correction"]
-    P6 --> P7["Phase 07: Safety, Stream Interception & TTSR<br/>Time-Traveling Stream Rules + HITL Gate"]
-    P7 --> P8["Phase 08: Dual-Model Advisor & Quality Gate<br/>Secondary Reviewer LLM + Rubric Scoring"]
-    P8 --> P9["Phase 09: Long-Term Memory & Production<br/>LangGraph Store + Streaming v3 Terminal UI"]
+    subgraph "Terminal User Interface (TUI)"
+        CLI["CLI / Terminal Runner<br/>Rich Streaming v3"]
+        TTSR["⚡ Time-Traveling Stream Rules<br/>(Ngắt token vi phạm realtime)"]
+        CLI <--> TTSR
+    end
+
+    subgraph "Lõi Điều khiển (DeepAgents Harness)"
+        AGENT["🧠 Main Coding Agent<br/>create_deep_agent()"]
+        CONTEXT["📦 Append-Only Context Manager<br/>(Chống trôi ngữ cảnh)"]
+        PLAN["📋 TodoListMiddleware<br/>(Bộ neo nhận thức)"]
+        COMPACT["🗜️ SummarizationMiddleware<br/>(Nén context tự động ở 85%)"]
+        
+        AGENT --> CONTEXT
+        AGENT --> PLAN
+        AGENT --> COMPACT
+    end
+
+    subgraph "Bộ Công cụ Phẫu thuật & Khảo sát Code (VFS & AST)"
+        VFS["📁 Smart VFS Tools<br/>ls, glob, grep, read (phân trang + tóm tắt)"]
+        HASH["⚓ Hashline / Anchor Edit Engine<br/>(Sửa code theo mỏ neo dòng/hash)"]
+        AST_GREP["🌳 ast-grep Tool<br/>(Tìm kiếm cấu trúc AST đa ngôn ngữ)"]
+        AST_EDIT["✂️ ast-edit Tool<br/>(Refactor code theo AST template)"]
+        
+        AGENT --> VFS
+        AGENT --> HASH
+        AGENT --> AST_GREP
+        AGENT --> AST_EDIT
+    end
+
+    subgraph "IDE Wiring (LSP & Diagnostics Loop)"
+        LSP["🔍 Language Server / Linter<br/>pyright & ruff"]
+        HEAL["🔄 Self-Healing Post-Tool Hook<br/>(Tự sửa lỗi cú pháp ngay sau edit)"]
+        
+        HASH -.->|Ghi file thành công| LSP
+        LSP -->|Bắn Diagnostics| HEAL
+        HEAL -.->|Inject lỗi compiler| AGENT
+    end
+
+    subgraph "Thực thi Mã nguồn (Execution Engine)"
+        SANDBOX["🧪 Persistent Python REPL"]
+        BRIDGE["🔁 Loopback Bridge<br/>(Code trong sandbox gọi lại tool agent)"]
+        
+        AGENT --> SANDBOX
+        SANDBOX <--> BRIDGE
+        BRIDGE -.-> VFS
+    end
+
+    subgraph "Multi-Agent Cô lập (Git Worktrees)"
+        SUB_DISPATCH["🔀 Subagent Task Tool"]
+        WT1["🌿 Git Worktree A (Branch Coder)"]
+        WT2["🌿 Git Worktree B (Branch Tester)"]
+        SCHEMA["📑 Structured JSON Validator"]
+        
+        AGENT --> SUB_DISPATCH
+        SUB_DISPATCH --> WT1
+        SUB_DISPATCH --> WT2
+        WT1 --> SCHEMA
+        WT2 --> SCHEMA
+        SCHEMA --> AGENT
+    end
+
+    subgraph "Giám sát & Ký ức (Advisor & Memory)"
+        ADVISOR["👁️ Dual-Model Advisor<br/>(Mô hình cố vấn chấm rủi ro P0-P3)"]
+        MEM["💾 Memory System<br/>retain / learn / recall (.omp SQLite)"]
+        
+        AGENT <--> ADVISOR
+        AGENT <--> MEM
+    end
+
+    TTSR <--> AGENT
 ```
 
-### Chi tiết mục tiêu từng Phase:
+---
 
-| Phase | Tên Phase | Trọng tâm lý thuyết & Kỹ thuật | Sản phẩm tự code hoàn chỉnh |
+## 4. Lộ trình 10 Phases Toàn diện
+
+| Phase | Tên Phase & Cảm hứng từ `oh-my-pi` | Cơ chế Thực hiện (Tái sử dụng vs Porting) | Sản phẩm Hoàn chỉnh Bạn sẽ Tự Code |
 |:---:|:---|:---|:---|
-| **01** | **Hello Harness & Context Core** | The Harness Problem; Context drift; Chuẩn hóa prompt theo Model Provider; Event Streaming v3. | Module cấu hình đa nhà cung cấp, system prompt thích ứng, runner CLI stream từng token. |
-| **02** | **Robust VFS & Hashline Editing** | Tại sao `str_replace` thất bại; Thuật toán mỏ neo nội dung (Hashline/Anchor); Smart Read phân trang & tóm tắt. | Bộ công cụ 7 VFS tools tích hợp engine chỉnh sửa chính xác từng dòng và tự bảo vệ context. |
-| **02.5**| **Codebase Intelligence & Repo Map**| Giới hạn của Grep; Phân tích cú pháp AST với `tree-sitter`; Biểu đồ quan hệ gọi hàm; GraphRAG. | Script trích xuất Repo Map tự động cho toàn bộ codebase và công cụ truy vấn ngữ nghĩa. |
-| **03** | **Cognitive Anchor: Task & Plan** | Trôi mục tiêu trong hội thoại dài; Vai trò của bộ neo nhận thức bên ngoài; Ngưỡng nén ngữ cảnh 85%. | Agent có khả năng lập kế hoạch nhiều bước, cập nhật tiến độ realtime và tự động tóm tắt lịch sử. |
-| **04** | **Execution Engine & Loopback Bridge**| Persistent Execution vs One-shot Subprocess; Cơ chế Loopback IPC: khi code trong sandbox cần gọi tool agent. | Persistent Python REPL sandbox cho phép chạy script test và gọi ngược lại `tool.read()` để debug. |
-| **05** | **Subagents & Git Worktree Isolation**| Race condition khi multi-agent cùng sửa code; Nguyên lý Git Worktree cô lập; Structured JSON Output. | Hệ thống điều phối subagent phân nhánh worktree riêng, thực thi độc lập và gom diff an toàn. |
-| **06** | **IDE Wiring: LSP & Self-Healing** | Chu trình khép kín của developer; Bắt diagnostics từ compiler/linter (`ruff`/`pyright`); Self-healing loop. | Middleware/Hook tự động kiểm tra lỗi cú pháp sau mỗi lần agent sửa file và yêu cầu sửa ngay. |
-| **07** | **Safety, Stream Interception & TTSR** | Rủi ro lệnh phá hủy; Giám sát token stream thời gian thực; Ngắt dòng Time-Traveling Stream Rules. | Bộ lọc stream phát hiện token nguy hiểm, ngắt dòng tức thì, bơm luật cấm và yêu cầu con người duyệt. |
-| **08** | **Dual-Model Advisor & Quality Gates** | Thiên kiến xác nhận của single-model; Kiến trúc 2 mô hình (Doer & Advisor); Chấm điểm theo tiêu chí (Rubric). | Cố vấn LLM chạy ngầm độc lập chấm điểm mã nguồn theo thang P0-P3 trước khi cho phép commit. |
-| **09** | **Continuous Learning & Production** | Ký ức dự án dài hạn; Bộ ba `retain` - `learn` - `recall`; Đóng gói Terminal TUI hoàn chỉnh. | Agent hoàn chỉnh có bộ nhớ vĩnh viễn, học hỏi từ sai lầm và giao diện tương tác chuyên nghiệp. |
+| **00** | **Design Architecture V3** | Phân tích 100% kiến trúc `oh-my-pi` | Bản đặc tả kiến trúc chuẩn, loại bỏ toàn bộ khái niệm cũ không liên quan. |
+| **01** | **Hello Harness & Context Core**<br>*(từ `agent-loop.ts`, `AppendOnlyContext`)* | **DeepAgents** + Porting Append-Only | Khởi tạo Deep Agent với cấu hình đa nhà cung cấp, kiểm soát lịch sử tin nhắn bất biến, stream token v3. |
+| **02** | **Robust VFS & Hashline Editing**<br>*(từ `crates/pi-edit`, `read-summary.ts`)* | **Porting sang Python** | Xây dựng bộ công cụ đọc file thông minh và engine sửa code theo mỏ neo dòng/hash (Hashline) chống lỗi `str_replace`. |
+| **02.5**| **Codebase Intelligence với ast-grep**<br>*(từ `ast-grep.ts`, `ast-edit.ts`)* | **Tái sử dụng `ast-grep`** (bỏ LightRAG) | Tích hợp `ast-grep` CLI / `ast-grep-py` thành 2 công cụ tìm kiếm và refactor code theo cây cú pháp AST chuyên nghiệp. |
+| **03** | **Cognitive Anchor: Task & Plan**<br>*(từ `todo.ts`, `plan-mode/`)* | **Tận dụng `deepagents`** | Kích hoạt `TodoListMiddleware` quản lý checklist phân cấp và `SummarizationMiddleware` tự nén ngữ cảnh khi vượt 85%. |
+| **04** | **Execution Engine & Loopback Bridge**<br>*(từ `eval.ts`, `src/eval/py/runner.py`)* | **Porting cơ chế Loopback sang Python** | Dựng Persistent Python REPL chạy ngầm giao tiếp qua NDJSON, hỗ trợ code test gọi ngược lại tool đọc/tìm kiếm của Agent. |
+| **05** | **Subagents & Git Worktree Isolation**<br>*(từ `task/worktree.ts`, `structured-subagent.ts`)*| **Tái sử dụng Git Worktree** | Xây dựng cơ chế sinh Git Worktree tự động cho từng subagent, triệt tiêu xung đột ghi đè code, ép kiểu trả về qua JSON Schema. |
+| **06** | **IDE Wiring: LSP & Self-Healing**<br>*(từ `lsp/writethrough.ts`)* | **Tái sử dụng `pyright`/`ruff`** | Tạo Post-Tool Hook kết nối Language Server, tự động bắt lỗi cú pháp sau mỗi lần sửa code và kích hoạt vòng lặp tự sửa lỗi. |
+| **07** | **Safety & Stream Rules (TTSR)**<br>*(từ `stream/` TTSR, `approval.ts`)* | **Porting TTSR sang Python** | Bắt regex trên token stream realtime, ngắt luồng sớm nếu phát hiện lệnh cấm, bơm luật phạt và tích hợp duyệt Human-in-the-Loop. |
+| **08** | **Dual-Model Advisor & Quality Gate**<br>*(từ `advisor/index.ts`, `review.ts`)* | **Porting kiến trúc Advisor sang Python** | Xây dựng mô hình cố vấn thứ hai (Advisor LLM) chạy song song chấm điểm rủi ro P0-P3 và duyệt diff theo tiêu chí (Rubric). |
+| **09** | **Continuous Learning & Production**<br>*(từ `memories/index.ts`)* | **Porting bộ 3 retain/learn/recall** | Xây dựng bộ nhớ dự án lâu dài xuyên session, tự động ghi nhận kinh nghiệm sửa lỗi, đóng gói CLI Terminal TUI hoàn chỉnh. |
 
 ---
 
-## 4. Công nghệ & Môi trường Thực thi (Tech Stack)
+## 5. Quy chuẩn Triển khai Mỗi Phase
 
-Để giữ cho dự án gọn gàng, hiệu quả và không bị phân tán, toàn bộ tutorial được chuẩn hóa trên:
-
-* **Ngôn ngữ**: Python 3.12+
-* **Package Manager**: `uv` (cực nhanh, chuẩn hóa virtualenv tự động)
-* **Framework Agent cốt lõi**: `deepagents` (LangChain ecosystem), `langchain-core`, `langgraph`
-* **Xử lý cú pháp code**: `tree-sitter`, `tree-sitter-python`
-* **Linter & Kiểm tra tĩnh**: `ruff`, `pyright`
-* **Kiểm thử**: `pytest`
-* **Quản lý Git cục bộ**: `GitPython`
-* **LLM Providers**: Hỗ trợ linh hoạt SiliconFlow (DeepSeek V3/R1), OpenAI, Anthropic, Google Gemini thông qua chuẩn tương thích LangChain.
-
----
-
-## 5. Quy chuẩn Thiết kế từng Bài Tutorial
-
-Mỗi bài tutorial từ Phase 1 đến Phase 9 sẽ được xây dựng theo một khuôn mẫu sư phạm nhất quán:
-
-1. **Lý thuyết chuyên sâu & So sánh thực tế**: Phân tích cặn kẽ "Tại sao cách làm cũ thất bại?", "Cách `oh-my-pi` giải quyết là gì?".
-2. **Lệnh cài đặt cụ thể**: Các lệnh shell rõ ràng (`uv add ...`).
-3. **Kiến trúc module & Hợp đồng dữ liệu**: Sơ đồ lớp, cấu trúc state TypedDict / Pydantic.
-4. **Code mẫu hoàn chỉnh cho từng module nhỏ**: Đầy đủ code, có type hints, docstring và comment giải thích cặn kẽ để bạn hiểu bản chất trước khi tự gõ lại.
-5. **Kịch bản thực hành kiểm thử (Hands-on Verification)**: Tạo môi trường giả lập (repo mẫu có bug) để bạn chạy thử nghiệm ngay.
-6. **Checklist tự nghiệm thu**: Tiêu chí rõ ràng để bạn kiểm tra xem code của mình đã hoạt động đúng như mong đợi chưa trước khi chuyển sang phase tiếp theo.
+1. **Lý thuyết nguồn cội**: Luôn trích dẫn trực tiếp file mã nguồn tương ứng trong `sample-code/oh-my-pi/` để bạn đối chiếu cách các tác giả `oh-my-pi` đã giải quyết bài toán.
+2. **Lệnh cài đặt chi tiết**: Chỉ rõ cách cài đặt các công cụ bên ngoài (ví dụ `ast-grep`, `ruff`, `pyright`, `GitPython`).
+3. **Mã nguồn mẫu từng module nhỏ**: Cung cấp đầy đủ code Python mẫu, có chú thích chi tiết lý do tại sao viết như vậy.
+4. **Kịch bản thực hành (Hands-on)**: Luôn đi kèm một repo giả lập có lỗi logic để bạn cho Agent chạy và tự quan sát kết quả.
+5. **Checklist nghiệm thu**: Tiêu chuẩn rõ ràng để bạn tự đánh giá code của mình trước khi bước sang phase tiếp theo.

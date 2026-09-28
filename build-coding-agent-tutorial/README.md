@@ -23,7 +23,7 @@
 | **00** | [Design Report V3](00_design_report.md) | Báo cáo kiến trúc tổng quan & bản đồ so sánh thực chiến | Toàn cảnh kiến trúc `oh-my-pi` |
 | **01** | [Hello Harness & Context Core](phase_01_hello_agent.md) | Khởi tạo Agent Harness, quản lý ngữ cảnh bất biến, stream token v3 | `agent-loop.ts`, `AppendOnlyContext` |
 | **02** | [Robust VFS & Hashline Editing](phase_02_file_operations.md) | Phẫu thuật sửa code theo mỏ neo dòng/hash, Smart Read phân trang | `crates/pi-edit`, `read-summary.ts` |
-| **02.5**| [Codebase Intelligence](phase_025_codebase_intelligence.md) | Trích xuất AST Repo Map với tree-sitter & truy vấn GraphRAG | `ast-grep`, `ast-edit` |
+| **02.5**| [Codebase Intelligence](phase_025_codebase_intelligence.md) | Tìm kiếm & refactor cấu trúc code với `ast-grep` và `ast-edit` | `ast-grep.ts`, `ast-edit.ts` |
 | **03** | [Cognitive Anchor: Task & Plan](phase_03_task_planning.md) | TodoList phân cấp, tự động nén ngữ cảnh khi vượt ngưỡng 85% | `todo.ts`, `plan-mode/` |
 | **04** | [Execution & Loopback Bridge](phase_04_code_execution.md) | Persistent Python REPL sandbox tích hợp cầu nối loopback gọi tool | `eval.ts`, `bash.ts` |
 | **05** | [Subagents & Git Worktrees](phase_05_subagents.md) | Điều phối multi-agent trên các Git Worktree độc lập, chống xung đột | `task/worktree.ts`, `structured-subagent.ts` |
