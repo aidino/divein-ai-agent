@@ -6,48 +6,66 @@ Không module nào trong đây được chạm filesystem.
 
 from __future__ import annotations
 
-# BOM: Là hằng số đại diện cho ký tự Unicode \ufeff (Zero Width No-Break Space).
-# BOM viết tắt của Byte Order Mark (Dấu thứ tự byte).
-# Nguồn gốc: Ban đầu, BOM được thiết kế cho các bảng mã UTF-16 và UTF-32 để máy tính xác định thứ tự byte là Big-Endian (MSB trước) hay Little-Endian (LSB trước).
+import re
 
-# Trong UTF-8: Thứ tự byte trong UTF-8 là cố định, do đó UTF-8 hoàn toàn không cần BOM.
-# Tuy nhiên, một số hệ điều hành và công cụ (đặc biệt là môi trường Windows như Notepad, PowerShell, Visual Studio cũ)
-# thường thêm chuỗi byte EF BB BF vào đầu file để đánh dấu rằng tệp này dùng UTF-8.
+import xxhash
 
-# Đặc tính: Khi decode sang string trong ngôn ngữ lập trình, chuỗi byte này trở thành ký tự \ufeff.
-# Đây là một ký tự vô hình (không có độ rộng) nên mắt thường nhìn trên trình soạn thảo sẽ không thấy bất kỳ dấu hiệu khác lạ nào.
+# Escape tường minh như omp: `pub const BOM: &str = "\u{FEFF}";`
+# KHÔNG gõ ký tự \ufeff literal — nó vô hình, linter/formatter có thể xóa mất
+# và biến BOM thành chuỗi rỗng (khi đó startswith("") luôn True, strip_bom
+# sẽ cắt ký tự đầu của MỌI file một cách âm thầm).
 BOM = "\ufeff"
 
 
 def strip_bom(content: str) -> str:
-    """Tách UTF-8 BOM ở đầu nội dung"""
+    """Tách UTF-8 BOM ở đầu nội dung. ← port text::strip_bom"""
     return content[1:] if content.startswith(BOM) else content
 
-# Hàm normalize_to_lf có nhiệm vụ chuẩn hóa mọi ký tự ngắt dòng (newline) trong văn bản về một chuẩn duy nhất là LF
-# (\n – chuẩn của Unix/Linux/macOS hiện đại).
+
 def normalize_to_lf(text: str) -> str:
-    """Đổi mọi CRLF / CR còn sót thành LF."""
+    """Đổi mọi CRLF / CR còn sót thành LF. ← port text::normalize_to_lf"""
     return text.replace("\r\n", "\n").replace("\r", "\n")
 
+
+# Regex compile MỘT LẦN ở mức module — mô phỏng `static XXX_RE: LazyLock<Regex>`
+# của omp; tránh khởi tạo lại object pattern qua mỗi lần gọi hàm.
+_SEEN_PREFIX_RE = re.compile(r"^[ *]?(\d+)(?:-(\d+))?:")
+
+
 class LineEnding:
-    """Phát hiện và khôi phục kiểu xuống dòng."""
+    """Phát hiện và khôi phục kiểu xuống dòng. ← port text::detect_line_ending"""
 
     LF = "lf"
     CRLF = "crlf"
 
     @staticmethod
     def detect(content: str) -> str:
+        """Kiểu xuống dòng của DÒNG ĐẦU thắng. ← port text::detect_line_ending
+
+        Chuẩn Rust so sánh VỊ TRÍ: \\r\\n chỉ thắng khi xuất hiện TRƯỚC \\n
+        đầu tiên ("first line ending style"), không phải "có \\r\\n bất kỳ
+        đâu" — file trộn "a\\nb\\r\\nc" có dòng đầu LF nên cả file là LF.
+        """
+        lf = content.find("\n")
+        if lf == -1:
+            return LineEnding.LF
         crlf = content.find("\r\n")
-        if crlf != -1:
-            return LineEnding.CRLF
-        return LineEnding.LF
+        return LineEnding.CRLF if crlf != -1 and crlf < lf else LineEnding.LF
 
     @staticmethod
     def restore(text: str, ending: str) -> str:
-        """Nội dung engine luôn là LF; ghi đĩa theo kiểu dòng gốc của file."""
+        """Ghi đĩa theo kiểu dòng gốc của file. ← port text::restore_line_endings
+
+        omp giữ bất biến "text đầu vào luôn LF" bằng kiến trúc crate; Python
+        không có cơ chế nào giữ giúp nên ta chủ động normalize bên trong —
+        caller vô tình truyền text còn \r\n sẽ không bị nhân đôi thành \r\r\n.
+        Chi phí 1 pass, chỉ trả lời đúng trong mọi tình huống (hàm total).
+        """
+        text = normalize_to_lf(text)
         if ending == LineEnding.CRLF:
             return text.replace("\n", "\r\n")
         return text
+
 
 def file_hash(text: str) -> str:
     """Content tag 4-hex cho một phiên bản file. ← port store::file_hash
@@ -61,7 +79,6 @@ def file_hash(text: str) -> str:
     Ví dụ: "def f():\\n    return 1\\n" và "def f():\\n    return 1   \\n"
     cho cùng một tag.
     """
-    import xxhash
 
     normalized = "\n".join(line.rstrip(" \t\r") for line in text.split("\n"))
     digest = xxhash.xxh32(normalized.encode("utf-8")).intdigest()
@@ -70,7 +87,6 @@ def file_hash(text: str) -> str:
 
 def payload_hash(text: str) -> int:
     """Khóa 64-bit ổn định cho patch input thô — dùng chống vòng lặp no-op. ← port store::payload_hash"""
-    import xxhash
 
     return xxhash.xxh64(text.encode("utf-8")).intdigest()
 
@@ -81,9 +97,7 @@ def seen_lines_from_body(body: str) -> list[int]:
     Mỗi dòng khớp `^[ *]?(\\d+)(-(\\d+))?:` đóng góp endpoint(s) của nó.
     Dòng `5-12:...` đóng góp cả 5 và 12 (guard cần biên, không cần từng dòng giữa).
     """
-    import re
-
-    prefix = re.compile(r"^[ *]?(\d+)(?:-(\d+))?:")
+    prefix = _SEEN_PREFIX_RE
     seen: list[int] = []
     for row in body.split("\n"):
         match = prefix.match(row)

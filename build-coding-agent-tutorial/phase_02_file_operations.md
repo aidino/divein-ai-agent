@@ -278,10 +278,17 @@ class LineEnding:
 
     @staticmethod
     def detect(content: str) -> str:
+        """Kiểu xuống dòng của DÒNG ĐẦU thắng. ← port text::detect_line_ending
+
+        Chuẩn Rust so sánh VỊ TRÍ: \\r\\n chỉ thắng khi xuất hiện TRƯỚC \\n
+        đầu tiên ("first line ending style"), không phải "có \\r\\n bất kỳ
+        đâu" — file trộn "a\\nb\\r\\nc" có dòng đầu LF nên cả file là LF.
+        """
+        lf = content.find("\n")
+        if lf == -1:
+            return LineEnding.LF
         crlf = content.find("\r\n")
-        if crlf != -1:
-            return LineEnding.CRLF
-        return LineEnding.LF
+        return LineEnding.CRLF if crlf != -1 and crlf < lf else LineEnding.LF
 
     @staticmethod
     def restore(text: str, ending: str) -> str:
