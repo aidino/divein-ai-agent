@@ -49,6 +49,9 @@
 | **28/09/2026** | **Quyết định 3**: Môi trường mặc định là Python 3.12+ và `uv`, không mở rộng thêm ngôn ngữ khác tránh phức tạp. | Chuẩn hóa toàn bộ stack thực hành trên Python, `ruff`, `pyright`, `pytest`. | ✅ Đã áp dụng |
 | **28/09/2026** | **Quyết định 4**: Bỏ hoàn toàn LightRAG/AgentSeek; giữ duy nhất `deepagents`; tất cả công cụ còn lại chuẩn hóa 100% theo `oh-my-pi` (chỉ rõ Reuse vs Porting). | Viết lại `00_design_report.md` V3.1: thay LightRAG bằng `ast-grep` / `ast-edit`, bổ sung bảng phân loại Reuse vs Porting cho từng tool. | ✅ Đã áp dụng |
 | **28/09/2026** | **Quyết định 5**: Tạo file tiến độ tổng thể (`PROGRESS.md`) để theo dõi xuyên suốt, học xong phase nào mới viết phase tiếp theo. | Khởi tạo file `PROGRESS.md`, cập nhật link từ `README.md`, sẵn sàng cập nhật sau mỗi buổi học. | ✅ Đã áp dụng |
+| **28/09/2026** | **Quyết định 6**: Chuẩn hóa chữ ký Type-safe LangChain 1.x cho `src/config.py` (`SecretStr`, `max_completion_tokens`, `cast(ProviderType)`). | Kiểm chứng qua Pyright 1.1.414 (0 errors, 0 warnings); cập nhật mã nguồn mẫu và bổ sung callout gỡ lỗi type trong `phase_01_hello_agent.md`. | ✅ Đã áp dụng |
+| **28/09/2026** | **Quyết định 7**: Khắc phục lỗi build `pyproject.toml` bằng cách cấu hình `[tool.uv] package = false`. | Xác định dự án là standalone CLI application, không cần đóng gói wheel; `uv sync` giải quyết 0 error, 0 warning; cập nhật hướng dẫn trong `phase_01_hello_agent.md`. | ✅ Đã áp dụng |
+| **28/09/2026** | **Quyết định 8**: Loại bỏ rò rỉ ngữ cảnh bài học (Tutorial Meta-Leakage) trong `src/prompt.py`. | Xóa câu "Hiện tại bạn đang ở Phase 1...", thay bằng 3 trụ cột kỹ thuật phần mềm chuẩn mực từ `oh-my-pi` (Engineering Rules, Tool Discipline, Completeness Contract). | ✅ Đã áp dụng |
 
 ---
 

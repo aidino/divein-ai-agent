@@ -55,10 +55,37 @@ uv init
 uv add deepagents langchain-core langchain-openai pydantic python-dotenv rich
 ```
 
+### Cấu hình `pyproject.toml` cho Dự án Ứng dụng (Application Project):
+Khi chạy `uv init`, mặc định `uv` coi dự án là một thư viện Python đóng gói (package để build wheel/sdist). Vì mã nguồn của chúng ta là ứng dụng CLI độc lập (đặt trực tiếp trong `src/config.py`, `src/main.py`), hãy thêm cấu hình `[tool.uv]` với `package = false` vào cuối file `pyproject.toml`:
+
+```toml
+[project]
+name = "dino-coding"
+version = "0.1.0"
+description = "AI Coding Agent based on DeepAgents and oh-my-pi"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "deepagents>=0.7.19",
+    "langchain-core>=1.6.5",
+    "langchain-openai>=1.6.6",
+    "pydantic>=2.13.5",
+    "python-dotenv>=1.2.3",
+    "rich>=15.0.0",
+]
+
+[tool.uv]
+package = false
+```
+
+> [!TIP]
+> **Tại sao cần `package = false`?**
+> Nếu không có `package = false`, `uv build` hoặc `uv sync` sẽ cố tìm kiếm thư mục gói `src/dino_coding/__init__.py` và báo lỗi `Target directory does not exist: src/dino_coding`. Thiết lập `package = false` báo cho `uv` biết đây là ứng dụng độc lập, `uv` sẽ quản lý venv và cài đặt dependencies nhanh chóng mà không yêu cầu đóng gói wheel.
+
 ### Giải thích các thư viện:
 * **`deepagents`**: Bộ khung Agent Harness chuyên biệt cho bài toán kỹ thuật phần mềm phức tạp của LangChain.
 * **`langchain-core`**: Cung cấp các abstractions chuẩn về tin nhắn (`HumanMessage`, `AIMessage`, `SystemMessage`) và công cụ (`@tool`).
-* **`langchain-openai`**: Client giao tiếp chuẩn OpenAI-compatible (dùng được cho cả OpenAI, SiliconFlow/DeepSeek, OpenRouter, v.v.).
+* **`langchain-openai`**: Client giao tiếp chuẩn OpenAI-compatible (dùng được cho cả OpenAI, SiliconFlow/DeepSeek, OpenRouter, Gemini, Z.AI, v.v.).
 * **`pydantic`**: Định nghĩa cấu trúc dữ liệu và kiểm thực (validation).
 * **`rich`**: Thư viện format giao diện dòng lệnh (CLI) đẹp mắt với màu sắc, bảng biểu và spinner.
 * **`python-dotenv`**: Tự động load biến môi trường từ file `.env`.
@@ -139,11 +166,11 @@ Module này chịu trách nhiệm nạp API key và khởi tạo đúng Chat Mod
 """Module quản lý cấu hình và khởi tạo mô hình ngôn ngữ (LLM)."""
 
 import os
-from typing import Literal
+from typing import Literal, cast
 from dotenv import load_dotenv
 from langchain_core.language_models.chat_models import BaseChatModel
 from langchain_openai import ChatOpenAI
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, SecretStr
 
 # Nạp biến môi trường từ .env
 load_dotenv()
@@ -163,7 +190,9 @@ class AppConfig(BaseModel):
     """Cấu hình toàn cục cho Agent."""
 
     provider: ProviderType = Field(
-        default_factory=lambda: os.getenv("AI_PROVIDER", "openai").lower()
+        default_factory=lambda: cast(
+            ProviderType, os.getenv("AI_PROVIDER", "openai").lower()
+        )
     )
     temperature: float = Field(default=0.0, ge=0.0, le=1.0)
     max_tokens: int = Field(default=4096)
@@ -180,10 +209,10 @@ class AppConfig(BaseModel):
                 raise ValueError("Thiếu biến môi trường OPENAI_API_KEY trong .env")
             return ChatOpenAI(
                 model=model_name,
-                api_key=api_key,
+                api_key=SecretStr(api_key),
                 base_url=base_url,
                 temperature=self.temperature,
-                max_tokens=self.max_tokens,
+                max_completion_tokens=self.max_tokens,
                 streaming=True,
             )
 
@@ -195,10 +224,10 @@ class AppConfig(BaseModel):
                 raise ValueError("Thiếu biến môi trường DEEPSEEK_API_KEY trong .env")
             return ChatOpenAI(
                 model=model_name,
-                api_key=api_key,
+                api_key=SecretStr(api_key),
                 base_url=base_url,
                 temperature=self.temperature,
-                max_tokens=self.max_tokens,
+                max_completion_tokens=self.max_tokens,
                 streaming=True,
             )
 
@@ -210,10 +239,10 @@ class AppConfig(BaseModel):
                 raise ValueError("Thiếu biến môi trường OPENROUTER_API_KEY trong .env")
             return ChatOpenAI(
                 model=model_name,
-                api_key=api_key,
+                api_key=SecretStr(api_key),
                 base_url=base_url,
                 temperature=self.temperature,
-                max_tokens=self.max_tokens,
+                max_completion_tokens=self.max_tokens,
                 streaming=True,
             )
 
@@ -225,10 +254,10 @@ class AppConfig(BaseModel):
                 raise ValueError("Thiếu biến môi trường ZAI_API_KEY trong .env")
             return ChatOpenAI(
                 model=model_name,
-                api_key=api_key,
+                api_key=SecretStr(api_key),
                 base_url=base_url,
                 temperature=self.temperature,
-                max_tokens=self.max_tokens,
+                max_completion_tokens=self.max_tokens,
                 streaming=True,
             )
 
@@ -240,10 +269,10 @@ class AppConfig(BaseModel):
                 raise ValueError("Thiếu biến môi trường SILICONFLOW_API_KEY trong .env")
             return ChatOpenAI(
                 model=model_name,
-                api_key=api_key,
+                api_key=SecretStr(api_key),
                 base_url=base_url,
                 temperature=self.temperature,
-                max_tokens=self.max_tokens,
+                max_completion_tokens=self.max_tokens,
                 streaming=True,
             )
 
@@ -259,10 +288,10 @@ class AppConfig(BaseModel):
             # Gemini hỗ trợ chuẩn OpenAI-compatible endpoint hoàn hảo:
             return ChatOpenAI(
                 model=model_name,
-                api_key=api_key,
+                api_key=SecretStr(api_key),
                 base_url=base_url,
                 temperature=self.temperature,
-                max_tokens=self.max_tokens,
+                max_completion_tokens=self.max_tokens,
                 streaming=True,
             )
 
@@ -278,11 +307,13 @@ class AppConfig(BaseModel):
                     "Để dùng Anthropic trực tiếp, bạn cần cài đặt: uv add langchain-anthropic"
                 )
             return ChatAnthropic(
-                model=model_name,
-                api_key=api_key,
+                model_name=model_name,
+                api_key=SecretStr(api_key),
                 temperature=self.temperature,
-                max_tokens=self.max_tokens,
+                max_tokens_to_sample=self.max_tokens,
                 streaming=True,
+                timeout=None,
+                stop=None,
             )
 
         else:
@@ -293,26 +324,44 @@ class AppConfig(BaseModel):
 config = AppConfig()
 ```
 
+> [!TIP]
+> **Kinh nghiệm gỡ lỗi Type-Checking (Pyright / Pylance) với LangChain 1.x**:
+> 1. `Field(default_factory=lambda: cast(ProviderType, ...))`: Hàm `.lower()` trả về `str`, cần dùng `typing.cast` để ép kiểu về `ProviderType` tránh lỗi `reportAssignmentType`.
+> 2. `api_key=SecretStr(api_key)`: LangChain 1.x khuyến nghị và yêu cầu `SecretStr` từ Pydantic để tránh vô tình leak API key trong log/telemetry.
+> 3. `max_completion_tokens`: Trong `langchain-openai 1.x`, `max_tokens` đã chuyển thành alias, tham số typed chính thức là `max_completion_tokens`.
+> 4. `ChatAnthropic`: Yêu cầu `model_name`, `max_tokens_to_sample`, cùng `timeout=None, stop=None` để thỏa mãn chữ ký tổng hợp của `BaseChatModel`.
+
 ---
 
 ### 4.3 Module 2: Bộ dựng System Prompt Thích ứng (`src/prompt.py`)
-Lấy cảm hứng từ `system-prompt.ts` của `oh-my-pi`. Prompt định hình rõ ràng vai trò kỹ sư phần mềm, quy tắc trả lời ngắn gọn, và tư duy hành động qua công cụ.
+Lấy cảm hứng từ kiến trúc `system-prompt.ts` và template `system-prompt.md` của `oh-my-pi`. Một system prompt chuẩn mực cho Coding Agent **tuyệt đối không chứa các câu văn rò rỉ ngữ cảnh bài học (Tutorial Meta-Leakage)** như "bạn đang ở bài 1", mà phải thiết lập vững chắc 3 trụ cột kỹ thuật bất biến:
+1. **Engineering Principles**: Tôn trọng sự thật (Fact over Fiction), không đoán mò cấu trúc dự án, ưu tiên giải pháp tối giản hơn abstraction phức tạp (Boring Design over Needless Abstraction).
+2. **Tool Discipline**: Luôn ưu tiên dùng specialized tools (`read`, `edit`, `write`), chỉ đọc phạm vi cần thiết, không bao giờ đọc bừa cả file gây tràn context.
+3. **Completeness Contract**: Không bao giờ bàn giao code dở dang, code giả, placeholder (`// TODO`), luôn kiểm chứng trước khi kết thúc.
 
 ```python
 """Module xây dựng System Prompt thích ứng cho Coding Agent."""
 
-def build_coding_system_prompt(project_name: str = "MyProject") -> str:
-    """Xây dựng system prompt định hình hành vi và kỷ luật lập trình."""
-    return f"""Bạn là Antigravity Core — một AI Coding Agent chuyên nghiệp, kiên định và chính xác.
+
+def build_coding_system_prompt(project_name: str = "dino-coding") -> str:
+    """Xây dựng system prompt định hình hành vi và kỷ luật kỹ thuật phần mềm."""
+    return f"""Bạn là Dino Coding Agent — một AI Coding Assistant chuyên nghiệp, kiên định và chính xác.
 Bạn đang làm việc trực tiếp trên dự án: `{project_name}`.
 
-## NGUYÊN TẮC HÀNH HÀNH CỐT LÕI (THE HARNESS RULES):
-1. **Fact over Fiction**: Không bao giờ suy đoán về mã nguồn hoặc cấu trúc file. Nếu cần biết điều gì, bạn PHẢI sử dụng công cụ để khảo sát.
-2. **Concise & Direct**: Luôn trả lời ngắn gọn, đi thẳng vào vấn đề kỹ thuật. Tránh văn phong đãi bôi hoặc lặp lại câu hỏi của người dùng.
-3. **Evidence-Driven**: Khi phát hiện lỗi hoặc đề xuất giải pháp, luôn trích dẫn tên file và dòng cụ thể làm bằng chứng.
-4. **Tool Discipline**: Khi gọi công cụ, kiểm tra kỹ các tham số đầu vào. Nếu một công cụ trả về lỗi, hãy phân tích thông điệp lỗi trước khi thử lại.
+## 1. NGUYÊN TẮC KỸ THUẬT CỐT LÕI (ENGINEERING RULES):
+- **Fact over Fiction**: Không bao giờ suy đoán về mã nguồn, cấu trúc thư mục hoặc nội dung file. Luôn kiểm chứng qua công cụ trước khi đưa ra nhận định.
+- **Concise & Direct**: Luôn trả lời ngắn gọn, tập trung vào bản chất kỹ thuật. Tránh diễn giải dong dài, không lặp lại câu hỏi của người dùng.
+- **Boring Design over Needless Abstraction**: Ưu tiên giải pháp đơn giản, dễ bảo trì, rõ ràng; kiên quyết loại bỏ mã thừa, không tạo abstraction không cần thiết.
+- **Evidence-Driven**: Khi phát hiện lỗi hoặc đề xuất giải pháp, luôn trích dẫn tên file và dòng cụ thể làm bằng chứng.
 
-Hiện tại bạn đang ở Phase 1 (Nền tảng khởi động). Hãy hỗ trợ người dùng giải đáp các thắc mắc về kiến trúc mã nguồn và kiểm tra môi trường.
+## 2. KỶ LUẬT SỬ DỤNG CÔNG CỤ (TOOL DISCIPLINE):
+- **Chuyên cụ hóa (Specialized Tools First)**: Luôn ưu tiên dùng các công cụ chuyên dụng (`read`, `edit`, `write`) thay vì thực thi lệnh shell tương đương.
+- **Không đoán mò đường dẫn**: Chỉ đọc hoặc thao tác trên những file đã được xác nhận tồn tại. Khi đọc file, đọc đúng phạm vi cần thiết, tránh nạp toàn bộ file gây tràn context.
+- **Xử lý lỗi chủ động**: Khi công cụ trả về lỗi, hãy phân tích thông điệp lỗi kỹ lưỡng để điều chỉnh tham số hoặc hướng tiếp cận trước khi thử lại.
+
+## 3. TIÊU CHUẨN HOÀN TẤT & BÀN GIAO (COMPLETENESS CONTRACT):
+- **Không giao việc dở dang**: Tuyệt đối không sử dụng code giả định, stub, placeholder, `// TODO: implement`, hay fake fallback. Mọi logic đề xuất phải hoàn chỉnh và chạy được.
+- **Kiểm chứng trước khi hoàn thành**: Luôn đảm bảo giải pháp đã được kiểm tra hoặc có bằng chứng thực tế chứng minh hoạt động trước khi kết luận hoàn tất.
 """
 ```
 
@@ -483,10 +532,18 @@ uv run python -c "from src.config import config; print('Provider hợp lệ:', c
 ```
 
 ### Bước 2: Chạy thử tương tác CLI
-Khởi động agent:
+Khởi động agent trực tiếp bằng Python:
 ```bash
 uv run python src/main.py
 ```
+
+> [!NOTE]
+> **Về việc chạy ứng dụng với `package = false`**:  
+> Vì `pyproject.toml` đã cấu hình `[tool.uv] package = false`, toàn bộ môi trường venv và dependencies được quản lý tự động mà không cần đóng gói wheel phức tạp. Bạn chỉ cần chạy trực tiếp qua `uv`:
+> ```bash
+> uv run python src/main.py
+> ```
+> *(Không cần cấu hình `[project.scripts]` vì `uv` không cài đặt project làm package trong site-packages, giúp tránh hoàn toàn các lỗi `Target directory does not exist: src/dino_coding`).*
 
 ### Bước 3: Thử nghiệm kịch bản gọi Tool tự động
 Trong phiên hội thoại, hãy nhập các câu hỏi sau để kiểm tra xem Agent có tự giác gọi Tool khi cần hay không:
