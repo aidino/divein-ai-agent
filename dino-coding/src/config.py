@@ -1,0 +1,1 @@
+# Cấu hình đa nhà cung cấp model

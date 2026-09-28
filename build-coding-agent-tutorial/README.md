@@ -4,6 +4,8 @@
 > kế thừa kiến trúc thực chiến từ **`oh-my-pi` (omp)** và sử dụng framework **`deepagents`** (LangChain ecosystem).
 > 
 > **Đặc điểm nổi bật**: Đầy đủ lý thuyết chuyên sâu, phân tích so sánh thực tế, lệnh cài đặt tường minh, và **mã nguồn mẫu hoàn chỉnh cho từng module nhỏ** để bạn tự tay ráp nối, thử nghiệm và làm chủ công nghệ.
+> 
+> 📊 **Theo dõi tiến độ học tập & biên soạn**: Xem chi tiết tại [**`PROGRESS.md`**](PROGRESS.md).
 
 ---
 

@@ -118,23 +118,22 @@ classDiagram
 Tạo file `.env` tại thư mục gốc:
 
 ```bash
-# Chọn provider: siliconflow | openai | anthropic | gemini
-AI_PROVIDER=siliconflow
+# Chọn provider: openai | anthropic | gemini | openrouter | deepseek | zai | siliconflow
+AI_PROVIDER=openai
 
-# Cấu hình cho SiliconFlow (DeepSeek V3 / R1)
-SILICONFLOW_API_KEY=sk-xxxxxx
-SILICONFLOW_BASE_URL=https://api.siliconflow.cn/v1
-SILICONFLOW_MODEL=deepseek-ai/DeepSeek-V3
+# Ví dụ OpenAI:
+OPENAI_API_KEY=sk-proj-xxxxxx
+OPENAI_MODEL=gpt-4o
 
-# Hoặc nếu dùng OpenAI chính thức:
-OPENAI_API_KEY=sk-xxxxxx
-OPENAI_MODEL=gpt-4o-mini
+# (Tham khảo thêm các provider khác trong file .env.example)
 ```
 
 ---
 
 ### 4.2 Module 1: Quản lý Cấu hình & Mô hình (`src/config.py`)
 Module này chịu trách nhiệm nạp API key và khởi tạo đúng Chat Model tương ứng, chuẩn hóa sự khác biệt giữa các provider (lấy cảm hứng từ `config/model-resolver.ts` của `oh-my-pi`).
+
+Đặc biệt, 6/7 provider (OpenAI, DeepSeek, OpenRouter, Z.AI, Gemini, SiliconFlow) đều hỗ trợ giao thức tương thích OpenAI, cho phép bạn dùng trực tiếp `ChatOpenAI` mà không cần cài thêm nhiều SDK rườm rà:
 
 ```python
 """Module quản lý cấu hình và khởi tạo mô hình ngôn ngữ (LLM)."""
@@ -149,29 +148,36 @@ from pydantic import BaseModel, Field
 # Nạp biến môi trường từ .env
 load_dotenv()
 
-ProviderType = Literal["siliconflow", "openai", "anthropic", "custom"]
+ProviderType = Literal[
+    "openai",
+    "anthropic",
+    "gemini",
+    "openrouter",
+    "deepseek",
+    "zai",
+    "siliconflow",
+]
 
 
 class AppConfig(BaseModel):
     """Cấu hình toàn cục cho Agent."""
 
     provider: ProviderType = Field(
-        default_factory=lambda: os.getenv("AI_PROVIDER", "siliconflow")
+        default_factory=lambda: os.getenv("AI_PROVIDER", "openai").lower()
     )
     temperature: float = Field(default=0.0, ge=0.0, le=1.0)
     max_tokens: int = Field(default=4096)
 
     def get_llm(self) -> BaseChatModel:
         """Khởi tạo và trả về LLM client chuẩn hóa của LangChain."""
-        if self.provider == "siliconflow":
-            api_key = os.getenv("SILICONFLOW_API_KEY")
-            base_url = os.getenv("SILICONFLOW_BASE_URL", "https://api.siliconflow.cn/v1")
-            model_name = os.getenv("SILICONFLOW_MODEL", "deepseek-ai/DeepSeek-V3")
+        p = self.provider
 
+        if p == "openai":
+            api_key = os.getenv("OPENAI_API_KEY")
+            model_name = os.getenv("OPENAI_MODEL", "gpt-4o")
+            base_url = os.getenv("OPENAI_BASE_URL")
             if not api_key:
-                raise ValueError("Thiếu biến môi trường SILICONFLOW_API_KEY trong .env")
-
-            # Sử dụng ChatOpenAI adapter vì SiliconFlow tương thích 100% OpenAI specs
+                raise ValueError("Thiếu biến môi trường OPENAI_API_KEY trong .env")
             return ChatOpenAI(
                 model=model_name,
                 api_key=api_key,
@@ -181,14 +187,97 @@ class AppConfig(BaseModel):
                 streaming=True,
             )
 
-        elif self.provider == "openai":
-            api_key = os.getenv("OPENAI_API_KEY")
-            model_name = os.getenv("OPENAI_MODEL", "gpt-4o")
-
+        elif p == "deepseek":
+            api_key = os.getenv("DEEPSEEK_API_KEY")
+            base_url = os.getenv("DEEPSEEK_BASE_URL", "https://api.deepseek.com")
+            model_name = os.getenv("DEEPSEEK_MODEL", "deepseek-chat")
             if not api_key:
-                raise ValueError("Thiếu biến môi trường OPENAI_API_KEY trong .env")
-
+                raise ValueError("Thiếu biến môi trường DEEPSEEK_API_KEY trong .env")
             return ChatOpenAI(
+                model=model_name,
+                api_key=api_key,
+                base_url=base_url,
+                temperature=self.temperature,
+                max_tokens=self.max_tokens,
+                streaming=True,
+            )
+
+        elif p == "openrouter":
+            api_key = os.getenv("OPENROUTER_API_KEY")
+            base_url = os.getenv("OPENROUTER_BASE_URL", "https://openrouter.ai/api/v1")
+            model_name = os.getenv("OPENROUTER_MODEL", "anthropic/claude-3.7-sonnet")
+            if not api_key:
+                raise ValueError("Thiếu biến môi trường OPENROUTER_API_KEY trong .env")
+            return ChatOpenAI(
+                model=model_name,
+                api_key=api_key,
+                base_url=base_url,
+                temperature=self.temperature,
+                max_tokens=self.max_tokens,
+                streaming=True,
+            )
+
+        elif p == "zai":
+            api_key = os.getenv("ZAI_API_KEY")
+            base_url = os.getenv("ZAI_BASE_URL", "https://api.z.ai/api/paas/v4")
+            model_name = os.getenv("ZAI_MODEL", "glm-4-plus")
+            if not api_key:
+                raise ValueError("Thiếu biến môi trường ZAI_API_KEY trong .env")
+            return ChatOpenAI(
+                model=model_name,
+                api_key=api_key,
+                base_url=base_url,
+                temperature=self.temperature,
+                max_tokens=self.max_tokens,
+                streaming=True,
+            )
+
+        elif p == "siliconflow":
+            api_key = os.getenv("SILICONFLOW_API_KEY")
+            base_url = os.getenv("SILICONFLOW_BASE_URL", "https://api.siliconflow.cn/v1")
+            model_name = os.getenv("SILICONFLOW_MODEL", "deepseek-ai/DeepSeek-V3")
+            if not api_key:
+                raise ValueError("Thiếu biến môi trường SILICONFLOW_API_KEY trong .env")
+            return ChatOpenAI(
+                model=model_name,
+                api_key=api_key,
+                base_url=base_url,
+                temperature=self.temperature,
+                max_tokens=self.max_tokens,
+                streaming=True,
+            )
+
+        elif p == "gemini":
+            api_key = os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY")
+            model_name = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
+            base_url = os.getenv(
+                "GEMINI_BASE_URL",
+                "https://generativelanguage.googleapis.com/v1beta/openai/",
+            )
+            if not api_key:
+                raise ValueError("Thiếu biến môi trường GEMINI_API_KEY trong .env")
+            # Gemini hỗ trợ chuẩn OpenAI-compatible endpoint hoàn hảo:
+            return ChatOpenAI(
+                model=model_name,
+                api_key=api_key,
+                base_url=base_url,
+                temperature=self.temperature,
+                max_tokens=self.max_tokens,
+                streaming=True,
+            )
+
+        elif p == "anthropic":
+            api_key = os.getenv("ANTHROPIC_API_KEY")
+            model_name = os.getenv("ANTHROPIC_MODEL", "claude-3-7-sonnet-20250219")
+            if not api_key:
+                raise ValueError("Thiếu biến môi trường ANTHROPIC_API_KEY trong .env")
+            try:
+                from langchain_anthropic import ChatAnthropic
+            except ImportError:
+                raise ImportError(
+                    "Để dùng Anthropic trực tiếp, bạn cần cài đặt: uv add langchain-anthropic"
+                )
+            return ChatAnthropic(
                 model=model_name,
                 api_key=api_key,
                 temperature=self.temperature,
