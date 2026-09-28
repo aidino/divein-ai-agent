@@ -39,7 +39,15 @@ class TodoMiddleware(AgentMiddleware[Any, Any, Any]):
         self.nudges_sent: int = 0
         self.tools = [get_todo_tool(self.tracker)]
         self._processed_msg_ids: set[str] = set()
+        self._processed_tool_call_ids: set[str] = set()
 
+    def _record_tool_call_once(self, tool_name: str, tool_call_id: Optional[str] = None) -> None:
+        """Records a tool call only once based on its ID if available."""
+        if tool_call_id:
+            if tool_call_id in self._processed_tool_call_ids:
+                return
+            self._processed_tool_call_ids.add(tool_call_id)
+        self.record_tool_call(tool_name)
     def record_tool_call(self, tool_name: str) -> None:
         """Records a tool call to update consecutive mutations counter."""
         if tool_name == "todo":
@@ -87,8 +95,9 @@ class TodoMiddleware(AgentMiddleware[Any, Any, Any]):
             if isinstance(msg, AIMessage) and msg.tool_calls:
                 for tc in msg.tool_calls:
                     name = tc.get("name") if isinstance(tc, dict) else getattr(tc, "name", None)
+                    tc_id = tc.get("id") if isinstance(tc, dict) else getattr(tc, "id", None)
                     if name:
-                        self.record_tool_call(name)
+                        self._record_tool_call_once(name, tc_id)
 
         # Check if we should inject mid-run nudge
         nudge_content = self.consume_nudge()
@@ -113,16 +122,18 @@ class TodoMiddleware(AgentMiddleware[Any, Any, Any]):
                             name = (
                                 tc.get("name") if isinstance(tc, dict) else getattr(tc, "name", None)
                             )
+                            tc_id = tc.get("id") if isinstance(tc, dict) else getattr(tc, "id", None)
                             if name:
-                                self.record_tool_call(name)
+                                self._record_tool_call_once(name, tc_id)
         elif isinstance(response, AIMessage):
             ai_msg = response
             if response.tool_calls:
                 has_tool_calls = True
                 for tc in response.tool_calls:
                     name = tc.get("name") if isinstance(tc, dict) else getattr(tc, "name", None)
+                    tc_id = tc.get("id") if isinstance(tc, dict) else getattr(tc, "id", None)
                     if name:
-                        self.record_tool_call(name)
+                        self._record_tool_call_once(name, tc_id)
 
         # If model is finishing (no tool calls) and tasks remain open, append completion reminder
         if not has_tool_calls:

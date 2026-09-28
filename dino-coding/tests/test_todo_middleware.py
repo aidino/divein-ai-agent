@@ -162,6 +162,41 @@ def test_wrap_model_call_injects_nudge_when_threshold_reached():
     assert middleware.nudges_sent == 1
     assert middleware.consecutive_mutations == 0
 
+def test_wrap_model_call_deduplicates_tool_calls_across_turns():
+    middleware = TodoMiddleware(mutation_threshold=4)
+
+    # Turn 1: Model responds with two tool calls
+    req1 = ModelRequest(
+        model=None,  # type: ignore
+        messages=[HumanMessage(content="start")],
+    )
+    tool_calls = [
+        {"name": "edit", "args": {}, "id": "call_1"},
+        {"name": "write", "args": {}, "id": "call_2"},
+    ]
+    resp1_ai_msg = AIMessage(content="", tool_calls=tool_calls, id="ai_turn_1")
+    resp1 = middleware.wrap_model_call(
+        req1, lambda r: ModelResponse(result=[resp1_ai_msg])
+    )
+    assert middleware.consecutive_mutations == 2
+
+    # Turn 2: The tool results and previous AIMessage are now part of request.messages
+    req2 = ModelRequest(
+        model=None,  # type: ignore
+        messages=[
+            HumanMessage(content="start"),
+            resp1_ai_msg,
+            ToolMessage(content="ok", tool_call_id="call_1"),
+            ToolMessage(content="ok", tool_call_id="call_2"),
+        ],
+    )
+    resp2 = middleware.wrap_model_call(
+        req2, lambda r: ModelResponse(result=[AIMessage(content="done")])
+    )
+    # The mutations should NOT have been counted again; consecutive_mutations stays at 2
+    assert middleware.consecutive_mutations == 2
+    assert middleware.nudges_sent == 0
+
 
 def test_wrap_model_call_completion_reminder():
     tracker = TodoTracker()
