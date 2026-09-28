@@ -62,14 +62,14 @@ AgentSeek là bộ công cụ quản lý vòng đời ứng dụng AI (Applicati
 
 ## 2. Tài liệu tham khảo mở rộng
 
-Trước khi bắt tay vào code hoặc khi muốn đào sâu hơn, bạn nên tham khảo các tài liệu sau trong thư mục `guideline/`:
+Trước khi bắt tay vào code hoặc khi muốn đào sâu hơn, bạn nên tham khảo các tài liệu sau trong thư mục `deepagents-guideline/`:
 
 | Tài liệu | Phần trọng tâm | Mục tiêu học tập |
 | :--- | :--- | :--- |
-| [00_preparation.md](../guideline/00_preparation.md) | Mục 1 đến Mục 8 | Nắm vững cách AgentSeek quản lý cấu hình `.env` đa nhà cung cấp và cài đặt `uv`. |
-| [03_agent_framework_to_agent_harness.md](../guideline/03_agent_framework_to_agent_harness.md) | Bảng so sánh 3 tầng & Context Engineering | Hiểu sâu sự khác biệt giữa Framework thuần túy và Agent Harness. |
-| [04_quickstart_first_deep_agent.md](../guideline/04_quickstart_first_deep_agent.md) | Hello World & Viết Custom Tool | Xem cú pháp chuẩn của hàm `create_deep_agent` và quy tắc 3 yếu tố của Tool. |
-| [01_deepagent_version_update.md](../guideline/01_deepagent_version_update.md) | Thay đổi ở phiên bản v0.7+ | Hiểu lý do tại sao Base Prompt mặc định rỗng và bạn phải tự viết System Prompt rõ ràng. |
+| [00_preparation.md](../deepagents-guideline/00_preparation.md) | Mục 1 đến Mục 8 | Nắm vững cách AgentSeek quản lý cấu hình `.env` đa nhà cung cấp và cài đặt `uv`. |
+| [03_agent_framework_to_agent_harness.md](../deepagents-guideline/03_agent_framework_to_agent_harness.md) | Bảng so sánh 3 tầng & Context Engineering | Hiểu sâu sự khác biệt giữa Framework thuần túy và Agent Harness. |
+| [04_quickstart_first_deep_agent.md](../deepagents-guideline/04_quickstart_first_deep_agent.md) | Hello World & Viết Custom Tool | Xem cú pháp chuẩn của hàm `create_deep_agent` và quy tắc 3 yếu tố của Tool. |
+| [01_deepagent_version_update.md](../deepagents-guideline/01_deepagent_version_update.md) | Thay đổi ở phiên bản v0.7+ | Hiểu lý do tại sao Base Prompt mặc định rỗng và bạn phải tự viết System Prompt rõ ràng. |
 
 ---
 

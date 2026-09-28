@@ -69,9 +69,9 @@ Một Coding Agent chuyên nghiệp không bao giờ nhảy ngay vào sửa file
 
 | Tài liệu | Phần trọng tâm | Mục tiêu học tập |
 | :--- | :--- | :--- |
-| [05_virtual_filesystem.md](../guideline/05_virtual_filesystem.md) | Built-in Tools & Storage Backends | Tìm hiểu chi tiết tham số của 7 file tools và cách khởi tạo `FilesystemBackend`. |
-| [05_virtual_filesystem.md](../guideline/05_virtual_filesystem.md) | Tự Động Quản Lý Context & Auto-Eviction | Nắm cơ chế bảo vệ context khi đọc file lớn. |
-| [01_deepagent_version_update.md](../guideline/01_deepagent_version_update.md) | Phần 6. File tool: Mạnh mẽ hơn | Hiểu thay đổi breaking change: `write_file` ghi đè và `edit_file` thay thế `patch`. |
+| [05_virtual_filesystem.md](../deepagents-guideline/05_virtual_filesystem.md) | Built-in Tools & Storage Backends | Tìm hiểu chi tiết tham số của 7 file tools và cách khởi tạo `FilesystemBackend`. |
+| [05_virtual_filesystem.md](../deepagents-guideline/05_virtual_filesystem.md) | Tự Động Quản Lý Context & Auto-Eviction | Nắm cơ chế bảo vệ context khi đọc file lớn. |
+| [01_deepagent_version_update.md](../deepagents-guideline/01_deepagent_version_update.md) | Phần 6. File tool: Mạnh mẽ hơn | Hiểu thay đổi breaking change: `write_file` ghi đè và `edit_file` thay thế `patch`. |
 
 ---
 

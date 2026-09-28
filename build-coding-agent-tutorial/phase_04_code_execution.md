@@ -62,9 +62,9 @@ Vì vậy, kiến trúc thực thi code (Execution Architecture) là trụ cột
 
 | Tài liệu | Phần trọng tâm | Mục tiêu học tập |
 | :--- | :--- | :--- |
-| [05_virtual_filesystem.md](../guideline/05_virtual_filesystem.md) | LocalShellBackend | Nắm cách cấu hình shell cục bộ và các công cụ thực thi tích hợp. |
-| [12_sandboxes.md](../guideline/12_sandboxes.md) | Mô hình Sandbox-as-Tool & Ranh giới bảo mật | Hiểu sâu cách kiến trúc hóa việc gửi lệnh thực thi sang môi trường cô lập. |
-| [17_interpreters.md](../guideline/17_interpreters.md) | CodeInterpreterMiddleware & PTC | Xem cách QuickJS thực thi an toàn và nạp Programmatic Tool Calling. |
+| [05_virtual_filesystem.md](../deepagents-guideline/05_virtual_filesystem.md) | LocalShellBackend | Nắm cách cấu hình shell cục bộ và các công cụ thực thi tích hợp. |
+| [12_sandboxes.md](../deepagents-guideline/12_sandboxes.md) | Mô hình Sandbox-as-Tool & Ranh giới bảo mật | Hiểu sâu cách kiến trúc hóa việc gửi lệnh thực thi sang môi trường cô lập. |
+| [17_interpreters.md](../deepagents-guideline/17_interpreters.md) | CodeInterpreterMiddleware & PTC | Xem cách QuickJS thực thi an toàn và nạp Programmatic Tool Calling. |
 
 ---
 

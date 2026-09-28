@@ -69,9 +69,9 @@ Trong Deep Agents, quyền hạn truy cập file được quản lý thông qua 
 
 | Tài liệu | Phần trọng tâm | Mục tiêu học tập |
 | :--- | :--- | :--- |
-| [13_filesystem_permissions.md](../guideline/13_filesystem_permissions.md) | First-Match-Wins & Default-Allow | Nắm vững thuật toán duyệt rule và cấu trúc của lớp `FilesystemPermission`. |
-| [13_filesystem_permissions.md](../guideline/13_filesystem_permissions.md) | Kế thừa quyền của Sub-agent | Hiểu cơ chế ghi đè permission khi tạo worker sub-agents. |
-| [11_human_in_the_loop.md](../guideline/11_human_in_the_loop.md) | Cơ chế Interrupt & Command(resume) | Cách LangGraph tạm dừng luồng thực thi và tiếp tục bằng lệnh resume. |
+| [13_filesystem_permissions.md](../deepagents-guideline/13_filesystem_permissions.md) | First-Match-Wins & Default-Allow | Nắm vững thuật toán duyệt rule và cấu trúc của lớp `FilesystemPermission`. |
+| [13_filesystem_permissions.md](../deepagents-guideline/13_filesystem_permissions.md) | Kế thừa quyền của Sub-agent | Hiểu cơ chế ghi đè permission khi tạo worker sub-agents. |
+| [11_human_in_the_loop.md](../deepagents-guideline/11_human_in_the_loop.md) | Cơ chế Interrupt & Command(resume) | Cách LangGraph tạm dừng luồng thực thi và tiếp tục bằng lệnh resume. |
 
 ---
 

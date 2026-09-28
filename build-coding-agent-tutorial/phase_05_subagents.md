@@ -63,9 +63,9 @@ Trong Deep Agents, giải pháp tối ưu là phân tách thành các **Sub-agen
 
 | Tài liệu | Phần trọng tâm | Mục tiêu học tập |
 | :--- | :--- | :--- |
-| [07_subagents.md](../guideline/07_subagents.md) | Cấu hình subagents & Tool `task` | Nắm rõ cú pháp khai báo dictionary subagents và nguyên lý cách ly context. |
-| [08_async_subagents.md](../guideline/08_async_subagents.md) | Subagents bất đồng bộ (Parallel Execution) | Cách khởi chạy nhiều subagent song song để review nhiều file cùng lúc. |
-| [18_dynamic_subagents.md](../guideline/18_dynamic_subagents.md) | Dynamic Subagents với QuickJS | Kỹ thuật nâng cao: cho phép LLM tự sinh mã gọi `task()` hàng loạt xử lý lô. |
+| [07_subagents.md](../deepagents-guideline/07_subagents.md) | Cấu hình subagents & Tool `task` | Nắm rõ cú pháp khai báo dictionary subagents và nguyên lý cách ly context. |
+| [08_async_subagents.md](../deepagents-guideline/08_async_subagents.md) | Subagents bất đồng bộ (Parallel Execution) | Cách khởi chạy nhiều subagent song song để review nhiều file cùng lúc. |
+| [18_dynamic_subagents.md](../deepagents-guideline/18_dynamic_subagents.md) | Dynamic Subagents với QuickJS | Kỹ thuật nâng cao: cho phép LLM tự sinh mã gọi `task()` hàng loạt xử lý lô. |
 
 ---
 

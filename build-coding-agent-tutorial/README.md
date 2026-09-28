@@ -9,7 +9,7 @@
 - Python 3.12+, uv, Node.js LTS
 - AgentSeek (`uv tool install --upgrade agentseek`)
 - API key: SiliconFlow / OpenAI / Anthropic / Google
-- Đã hoàn thành khóa học Deep Agents (`guideline/`)
+- Đã hoàn thành khóa học Deep Agents (`deepagents-guideline/`)
 
 ## Lộ trình
 

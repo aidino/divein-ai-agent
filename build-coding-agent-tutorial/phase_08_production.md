@@ -67,10 +67,10 @@ Khi triển khai cho doanh nghiệp, bạn có thể tận dụng các dịch v�
 
 | Tài liệu | Phần trọng tâm | Mục tiêu học tập |
 | :--- | :--- | :--- |
-| [16_streaming.md](../guideline/16_streaming.md) | V3 Typed Projections & Interleave | Cách tiêu thụ stream sự kiện thời gian thực cho frontend. |
-| [10_long_term_memory.md](../guideline/10_long_term_memory.md) | MemoryMiddleware & StoreBackend | Cơ chế lưu trữ tri thức dài hạn cross-session và phân chia namespace. |
-| [14_mcp.md](../guideline/14_mcp.md) | MultiServerMCPClient & FastMCP | Cách kết nối Agent với các công cụ bên ngoài theo chuẩn Model Context Protocol. |
-| [09_skills.md](../guideline/09_skills.md) | Đóng gói kỹ năng tái sử dụng | Chuẩn cấu trúc file `SKILL.md` để Agent nạp kỹ năng động. |
+| [16_streaming.md](../deepagents-guideline/16_streaming.md) | V3 Typed Projections & Interleave | Cách tiêu thụ stream sự kiện thời gian thực cho frontend. |
+| [10_long_term_memory.md](../deepagents-guideline/10_long_term_memory.md) | MemoryMiddleware & StoreBackend | Cơ chế lưu trữ tri thức dài hạn cross-session và phân chia namespace. |
+| [14_mcp.md](../deepagents-guideline/14_mcp.md) | MultiServerMCPClient & FastMCP | Cách kết nối Agent với các công cụ bên ngoài theo chuẩn Model Context Protocol. |
+| [09_skills.md](../deepagents-guideline/09_skills.md) | Đóng gói kỹ năng tái sử dụng | Chuẩn cấu trúc file `SKILL.md` để Agent nạp kỹ năng động. |
 
 ---
 

@@ -18,8 +18,8 @@ Cơ chế phân quyền hệ thống tệp tin yêu cầu phiên bản Deep Agen
 * **Chế độ `interrupt` (kiểm duyệt con người):** Yêu cầu `deepagents>=0.6.8`
 
 > [!NOTE]
-> * Nếu bạn chưa quen thuộc với khái niệm **Backend** và đường dẫn ảo, vui lòng đọc lại [Chương 3: Hệ thống tệp tin ảo (Virtual File System)](file:///home/lai/Documents/divein-ai-agent/guideline/05_virtual_filesystem.md).
-> * Nếu cần nắm vững chu trình tạm dừng và phục hồi trạng thái hội thoại, hãy tham khảo [Chương 9: Human-in-the-Loop](file:///home/lai/Documents/divein-ai-agent/guideline/11_human_in_the_loop.md).
+> * Nếu bạn chưa quen thuộc với khái niệm **Backend** và đường dẫn ảo, vui lòng đọc lại [Chương 3: Hệ thống tệp tin ảo (Virtual File System)](./05_virtual_filesystem.md).
+> * Nếu cần nắm vững chu trình tạm dừng và phục hồi trạng thái hội thoại, hãy tham khảo [Chương 9: Human-in-the-Loop](./11_human_in_the_loop.md).
 
 ---
 

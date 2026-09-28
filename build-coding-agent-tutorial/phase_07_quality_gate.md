@@ -62,9 +62,9 @@ Một hiện tượng thú vị khi Agent gặp bài toán khó là: Agent tìm 
 
 | Tài liệu | Phần trọng tâm | Mục tiêu học tập |
 | :--- | :--- | :--- |
-| [15_grading_rubrics.md](../guideline/15_grading_rubrics.md) | Kiến trúc 4 vai trò & Nguyên lý cốt lõi | Hiểu sâu tại sao cần phân tách Working Model và Grader Model. |
-| [15_grading_rubrics.md](../guideline/15_grading_rubrics.md) | Cờ `unverified` và Nguyên tắc Fail-Closed | Cách framework bắt quả tang Agent cố tình lách luật không chạy test. |
-| [15_grading_rubrics.md](../guideline/15_grading_rubrics.md) | Frozen Criteria & Chống Criteria Drift | Cơ chế đóng băng tiêu chuẩn qua các chu kỳ phản hồi lặp lại. |
+| [15_grading_rubrics.md](../deepagents-guideline/15_grading_rubrics.md) | Kiến trúc 4 vai trò & Nguyên lý cốt lõi | Hiểu sâu tại sao cần phân tách Working Model và Grader Model. |
+| [15_grading_rubrics.md](../deepagents-guideline/15_grading_rubrics.md) | Cờ `unverified` và Nguyên tắc Fail-Closed | Cách framework bắt quả tang Agent cố tình lách luật không chạy test. |
+| [15_grading_rubrics.md](../deepagents-guideline/15_grading_rubrics.md) | Frozen Criteria & Chống Criteria Drift | Cơ chế đóng băng tiêu chuẩn qua các chu kỳ phản hồi lặp lại. |
 
 ---
 

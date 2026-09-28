@@ -56,8 +56,8 @@ Trong Phase 2, bạn đã thấy Agent dùng `grep` và `glob` để tìm code. 
 
 | Tài liệu | Phần trọng tâm | Mục tiêu học tập |
 | :--- | :--- | :--- |
-| [05_virtual_filesystem.md](../guideline/05_virtual_filesystem.md) | Giới hạn của grep và glob | Hiểu tại sao các công cụ duyệt text thuần túy không đáp ứng được dự án lớn. |
-| [14_mcp.md](../guideline/14_mcp.md) | Kiến trúc MCP & FastMCP | Cách gói các công cụ phân tích code thông minh thành MCP server để cắm vào Agent. |
+| [05_virtual_filesystem.md](../deepagents-guideline/05_virtual_filesystem.md) | Giới hạn của grep và glob | Hiểu tại sao các công cụ duyệt text thuần túy không đáp ứng được dự án lớn. |
+| [14_mcp.md](../deepagents-guideline/14_mcp.md) | Kiến trúc MCP & FastMCP | Cách gói các công cụ phân tích code thông minh thành MCP server để cắm vào Agent. |
 | [LightRAG GitHub](https://github.com/HKUDS/LightRAG) | Architecture & Query Modes | Nghiên cứu mô hình đồ thị tri thức 2 tầng và 5 query modes (naive, local, global, hybrid, mix). |
 | [Understand-Anything GitHub](https://github.com/Egonex-AI/Understand-Anything) | Multi-Agent Pipeline & MCP Skills | Tìm hiểu cách xây dựng đồ thị tương tác và dashboard trực quan hóa codebase. |
 

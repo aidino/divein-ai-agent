@@ -68,9 +68,9 @@ Deep Agents hỗ trợ 2 cơ chế hook khi xây dựng middleware:
 
 | Tài liệu | Phần trọng tâm | Mục tiêu học tập |
 | :--- | :--- | :--- |
-| [06_task_planning.md](../guideline/06_task_planning.md) | TodoListMiddleware & write_todos | Nắm rõ cấu trúc dữ liệu của task, cách kích hoạt middleware và lấy state todos. |
-| [06_task_planning.md](../guideline/06_task_planning.md) | Node-style vs Wrap-style Hooks | Phân biệt 2 cơ chế hook và tầm quan trọng đối với khả năng ngắt (interrupt). |
-| [06_task_planning.md](../guideline/06_task_planning.md) | Cognitive Anchor & Context Compression | Hiểu cách Todo List kết hợp cùng SummarizationMiddleware để giữ thăng bằng cho Agent. |
+| [06_task_planning.md](../deepagents-guideline/06_task_planning.md) | TodoListMiddleware & write_todos | Nắm rõ cấu trúc dữ liệu của task, cách kích hoạt middleware và lấy state todos. |
+| [06_task_planning.md](../deepagents-guideline/06_task_planning.md) | Node-style vs Wrap-style Hooks | Phân biệt 2 cơ chế hook và tầm quan trọng đối với khả năng ngắt (interrupt). |
+| [06_task_planning.md](../deepagents-guideline/06_task_planning.md) | Cognitive Anchor & Context Compression | Hiểu cách Todo List kết hợp cùng SummarizationMiddleware để giữ thăng bằng cho Agent. |
 
 ---
 
