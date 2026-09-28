@@ -229,7 +229,6 @@ class TodoParams:
 ### 4.2 `markdown.py` — Chuyển đổi Markdown Hai Chiều
 
 ```python
-"""Two-way Markdown serialization and parsing for TodoPhase and TodoItem."""
 from __future__ import annotations
 
 import re
@@ -255,12 +254,19 @@ MARKER_TO_STATUS: dict[str, TodoStatus] = {
     "!": "blocked",
 }
 
+# Regex to match task items like:
+# - [ ] task description <!-- blocker: reason -->
+# Supports -, *, + bullet points, leading indentation, escaped brackets \[ \], empty brackets [].
 TASK_PATTERN = re.compile(
     r"^\s*[-*+]\s*\\?\[\s*(.*?)\s*\\?\]\s+(.*?)\s*$"
 )
+
+# Regex to extract trailing HTML blocker comment: <!-- blocker: <reason> -->
 BLOCKER_COMMENT_PATTERN = re.compile(
     r"\s*<!--\s*blocker:\s*(.*?)\s*-->\s*$"
 )
+
+# Regex to match heading lines like: # Phase Name
 HEADING_PATTERN = re.compile(r"^\s*#+\s*(.*?)\s*$")
 
 
@@ -274,8 +280,10 @@ def phases_to_markdown(phases: list[TodoPhase]) -> str:
         lines: list[str] = [f"# {phase.name}"]
         for task in phase.tasks:
             marker = STATUS_TO_MARKER.get(task.status, " ")
-            comment = f" <!-- blocker: {task.blocker} -->" if task.blocker else ""
-            lines.append(f"- [{marker}] {task.content}{comment}")
+            line = f"- [{marker}] {task.content}"
+            if task.status == "blocked" and task.blocker:
+                line += f" <!-- blocker: {task.blocker} -->"
+            lines.append(line)
         sections.append("\n".join(lines))
 
     return "\n\n".join(sections) + "\n"
@@ -283,51 +291,52 @@ def phases_to_markdown(phases: list[TodoPhase]) -> str:
 
 def markdown_to_phases(md: str) -> tuple[list[TodoPhase], list[str]]:
     """Parses markdown checklist format into a list of TodoPhase and any errors."""
-    lines = md.splitlines()
     phases: list[TodoPhase] = []
     errors: list[str] = []
 
     current_phase: TodoPhase | None = None
-    default_phase: TodoPhase | None = None
 
-    for line_num, line in enumerate(lines, start=1):
+    for line_num, line in enumerate(md.splitlines(), start=1):
         stripped = line.strip()
         if not stripped:
             continue
 
-        heading_match = HEADING_PATTERN.match(line)
-        if heading_match:
-            phase_name = heading_match.group(1).strip()
-            if not phase_name:
-                phase_name = f"Phase {len(phases) + 1}"
-            current_phase = TodoPhase(name=phase_name, tasks=[])
-            phases.append(current_phase)
-            continue
-
+        # Check for task first, since indented headings are rare but task regex is specific
         task_match = TASK_PATTERN.match(line)
         if task_match:
-            marker_str = task_match.group(1).strip()
-            body = task_match.group(2).strip()
+            marker = task_match.group(1)
+            raw_content = task_match.group(2)
 
             blocker: str | None = None
-            comment_match = BLOCKER_COMMENT_PATTERN.search(body)
-            if comment_match:
-                blocker = comment_match.group(1).strip()
-                body = body[: comment_match.start()].strip()
+            blocker_match = BLOCKER_COMMENT_PATTERN.search(raw_content)
+            if blocker_match:
+                blocker = blocker_match.group(1)
+                content = BLOCKER_COMMENT_PATTERN.sub("", raw_content).strip()
+            else:
+                content = raw_content.strip()
 
-            status = MARKER_TO_STATUS.get(marker_str, "pending")
+            if marker in MARKER_TO_STATUS:
+                status = MARKER_TO_STATUS[marker]
+            else:
+                status = "pending"
+                errors.append(f"Line {line_num}: Unknown status marker '{marker}', defaulted to 'pending'")
 
-            target = current_phase
-            if target is None:
-                if default_phase is None:
-                    default_phase = TodoPhase(name="Tasks", tasks=[])
-                    phases.append(default_phase)
-                target = default_phase
+            item = TodoItem(content=content, status=status, blocker=blocker)
 
-            target.tasks.append(TodoItem(content=body, status=status, blocker=blocker))
+            if current_phase is None:
+                current_phase = TodoPhase(name="Tasks")
+                phases.append(current_phase)
+
+            current_phase.tasks.append(item)
             continue
 
-        errors.append(f"Line {line_num}: Unrecognized line format: {stripped}")
+        # Check for heading
+        heading_match = HEADING_PATTERN.match(line)
+        if heading_match:
+            heading_text = heading_match.group(1)
+            current_phase = TodoPhase(name=heading_text)
+            phases.append(current_phase)
+            continue
 
     return phases, errors
 ```
@@ -339,7 +348,6 @@ def markdown_to_phases(md: str) -> tuple[list[TodoPhase], list[str]]:
 Module `engine.py` là trái tim logic: áp dụng thay đổi trên bản sao dữ liệu (all-or-nothing), điều phối auto-advance pointer, và định dạng tóm tắt trực quan:
 
 ```python
-"""Pure state machine implementing 9 atomic todo operations."""
 from __future__ import annotations
 
 import re
@@ -384,7 +392,6 @@ def find_phase_by_name(phases: list[TodoPhase], name: str) -> Optional[TodoPhase
 
 
 def normalize_in_progress(phases: list[TodoPhase]) -> None:
-    """Enforces the Single Active Pointer invariant and auto-advances to pending."""
     ordered_tasks = [task for phase in phases for task in phase.tasks]
     if not ordered_tasks:
         return
@@ -416,237 +423,199 @@ def resolve_task_or_error(
                 "not by IDs — pass the task's full text from the previous result."
             )
         else:
-            hint = f' in phase "{phases[0].name}"' if len(phases) == 1 else ""
+            total_tasks = sum(len(p.tasks) for p in phases)
+            hint = " (todo list is empty — was it replaced or not yet created?)" if total_tasks == 0 else ""
             errors.append(f'Task "{content}" not found{hint}')
         return None
     return hit
 
 
-def apply_ops(
-    phases: list[TodoPhase], params: TodoParams
-) -> tuple[list[TodoPhase], list[str]]:
-    """Applies a Todo operation immutably. Returns (new_phases, errors)."""
-    p = clone_phases(phases)
-    errors: list[str] = []
-
-    if params.op == "view":
-        return p, errors
-
-    if params.op == "init":
-        p, errors = _op_init(params)
-    elif params.op == "start":
-        _op_start(p, params, errors)
-    elif params.op == "done":
-        _op_done(p, params, errors)
-    elif params.op == "drop":
-        _op_drop(p, params, errors)
-    elif params.op == "block":
-        _op_block(p, params, errors)
-    elif params.op == "unblock":
-        _op_unblock(p, params, errors)
-    elif params.op == "rm":
-        p, errors = _op_rm(p, params)
-    elif params.op == "append":
-        _op_append(p, params, errors)
-    else:
-        errors.append(f"Unknown operation: {params.op}")
-
-    if errors:
-        return phases, errors
-
-    normalize_in_progress(p)
-    return p, []
+def resolve_phase_or_error(
+    phases: list[TodoPhase], name: Optional[str], errors: list[str]
+) -> Optional[TodoPhase]:
+    if not name:
+        errors.append("Missing phase name")
+        return None
+    phase = find_phase_by_name(phases, name)
+    if not phase:
+        errors.append(f'Phase "{name}" not found')
+        return None
+    return phase
 
 
-def _op_init(params: TodoParams) -> tuple[list[TodoPhase], list[str]]:
-    errors: list[str] = []
-    new_phases: list[TodoPhase] = []
+def get_task_targets(
+    phases: list[TodoPhase], entry: TodoParams, errors: list[str]
+) -> list[TodoItem]:
+    if entry.task:
+        hit = resolve_task_or_error(phases, entry.task, errors)
+        return [hit[0]] if hit else []
+    if entry.phase:
+        phase = resolve_phase_or_error(phases, entry.phase, errors)
+        return list(phase.tasks) if phase else []
+    return [task for phase in phases for task in phase.tasks]
+
+
+def init_phases(entry: TodoParams, errors: list[str]) -> list[TodoPhase]:
+    raw_list = entry.list
+    if not raw_list and entry.items:
+        raw_list = [InitPhaseInput(phase=entry.phase or DEFAULT_INIT_PHASE, items=entry.items)]
+    if not raw_list:
+        errors.append("Missing list for init operation")
+        return []
+
+    seen_phases: set[str] = set()
     seen_tasks: set[str] = set()
+    result: list[TodoPhase] = []
 
-    if params.list is not None:
-        seen_phases: set[str] = set()
-        for entry in params.list:
-            if entry.phase in seen_phases:
-                errors.append(f'Duplicate phase name: "{entry.phase}"')
-                return [], errors
-            seen_phases.add(entry.phase)
+    for list_entry in raw_list:
+        if list_entry.phase in seen_phases:
+            errors.append(f'Duplicate phase "{list_entry.phase}" in init list')
+        seen_phases.add(list_entry.phase)
 
-            phase_tasks: list[TodoItem] = []
-            for item_content in entry.items:
-                if item_content in seen_tasks:
-                    errors.append(f'Duplicate task content: "{item_content}"')
-                    return [], errors
-                seen_tasks.add(item_content)
-                phase_tasks.append(TodoItem(content=item_content, status="pending"))
-            new_phases.append(TodoPhase(name=entry.phase, tasks=phase_tasks))
-    elif params.items is not None:
-        phase_tasks = []
-        for item_content in params.items:
-            if item_content in seen_tasks:
-                errors.append(f'Duplicate task content: "{item_content}"')
-                return [], errors
-            seen_tasks.add(item_content)
-            phase_tasks.append(TodoItem(content=item_content, status="pending"))
-        new_phases.append(TodoPhase(name=DEFAULT_INIT_PHASE, tasks=phase_tasks))
-    else:
-        errors.append("op='init' requires 'list' or 'items'")
-        return [], errors
-
-    return new_phases, []
+        phase_tasks: list[TodoItem] = []
+        for content in list_entry.items:
+            if content in seen_tasks:
+                errors.append(f'Duplicate task "{content}" in init list')
+            seen_tasks.add(content)
+            phase_tasks.append(TodoItem(content=content, status="pending"))
+        result.append(TodoPhase(name=list_entry.phase, tasks=phase_tasks))
+    return result
 
 
-def _op_start(phases: list[TodoPhase], params: TodoParams, errors: list[str]) -> None:
-    hit = resolve_task_or_error(phases, params.task, errors)
-    if not hit:
-        return
-    task, _ = hit
-    for ph in phases:
-        for t in ph.tasks:
-            if t.status == "in_progress":
-                t.status = "pending"
-    task.status = "in_progress"
-    task.blocker = None
+def append_items(
+    phases: list[TodoPhase], entry: TodoParams, errors: list[str]
+) -> list[TodoPhase]:
+    if not entry.phase:
+        errors.append("Missing phase name for append operation")
+        return phases
+    if not entry.items:
+        errors.append("Missing items for append operation")
+        return phases
+
+    seen: set[str] = set()
+    has_duplicate = False
+    for content in entry.items:
+        if content in seen or find_task_by_content(phases, content):
+            errors.append(f'Task "{content}" already exists')
+            has_duplicate = True
+        seen.add(content)
+
+    if has_duplicate:
+        return phases
+
+    phase = find_phase_by_name(phases, entry.phase)
+    if not phase:
+        phase = TodoPhase(name=entry.phase, tasks=[])
+        phases.append(phase)
+
+    for content in entry.items:
+        phase.tasks.append(TodoItem(content=content, status="pending"))
+    return phases
 
 
-def _op_done(phases: list[TodoPhase], params: TodoParams, errors: list[str]) -> None:
-    if params.task:
-        hit = resolve_task_or_error(phases, params.task, errors)
-        if hit:
-            hit[0].status = "completed"
-            hit[0].blocker = None
-    elif params.phase:
-        phase = find_phase_by_name(phases, params.phase)
+def remove_tasks(
+    phases: list[TodoPhase], entry: TodoParams, errors: list[str]
+) -> list[TodoPhase]:
+    if entry.task:
+        hit = resolve_task_or_error(phases, entry.task, errors)
+        if not hit:
+            return phases
+        task, phase = hit
+        phase.tasks = [t for t in phase.tasks if t != task]
+        return phases
+    if entry.phase:
+        phase = resolve_phase_or_error(phases, entry.phase, errors)
         if not phase:
-            errors.append(f'Phase "{params.phase}" not found')
-            return
-        for t in phase.tasks:
-            t.status = "completed"
-            t.blocker = None
-    else:
-        errors.append("op='done' requires 'task' or 'phase'")
+            return phases
+        phase.tasks = []
+        return phases
+    for p in phases:
+        p.tasks = []
+    return phases
 
 
-def _op_drop(phases: list[TodoPhase], params: TodoParams, errors: list[str]) -> None:
-    if params.task:
-        hit = resolve_task_or_error(phases, params.task, errors)
-        if hit:
-            hit[0].status = "abandoned"
-    elif params.phase:
-        phase = find_phase_by_name(phases, params.phase)
-        if not phase:
-            errors.append(f'Phase "{params.phase}" not found')
-            return
-        for t in phase.tasks:
-            t.status = "abandoned"
-    else:
-        errors.append("op='drop' requires 'task' or 'phase'")
-
-
-def _op_block(phases: list[TodoPhase], params: TodoParams, errors: list[str]) -> None:
-    reason = " ".join(params.reason.split()) if params.reason else None
-    if params.task:
-        hit = resolve_task_or_error(phases, params.task, errors)
-        if hit:
-            task, _ = hit
-            if task.status in ("completed", "abandoned"):
-                errors.append(f'Cannot block task with status "{task.status}"')
-                return
+def apply_entry(
+    phases: list[TodoPhase], entry: TodoParams, errors: list[str]
+) -> list[TodoPhase]:
+    op = entry.op
+    if op == "init":
+        return init_phases(entry, errors)
+    elif op == "start":
+        hit = resolve_task_or_error(phases, entry.task, errors)
+        if not hit:
+            return phases
+        target_task, _ = hit
+        for phase in phases:
+            for candidate in phase.tasks:
+                if candidate.status == "in_progress" and candidate != target_task:
+                    candidate.status = "pending"
+        target_task.status = "in_progress"
+        return phases
+    elif op == "done":
+        for task in get_task_targets(phases, entry, errors):
+            task.status = "completed"
+        return phases
+    elif op == "drop":
+        for task in get_task_targets(phases, entry, errors):
+            task.status = "abandoned"
+        return phases
+    elif op == "block":
+        if not entry.task and not entry.phase:
+            errors.append("block requires a task or phase target")
+            return phases
+        reason = re.sub(r"\s+", " ", entry.reason.strip()) if entry.reason else None
+        for task in get_task_targets(phases, entry, errors):
+            if task.status not in ("pending", "in_progress", "blocked"):
+                continue
             task.status = "blocked"
             task.blocker = reason
-    elif params.phase:
-        phase = find_phase_by_name(phases, params.phase)
-        if not phase:
-            errors.append(f'Phase "{params.phase}" not found')
-            return
-        for t in phase.tasks:
-            if t.status not in ("completed", "abandoned"):
-                t.status = "blocked"
-                t.blocker = reason
-    else:
-        errors.append("op='block' requires 'task' or 'phase'")
-
-
-def _op_unblock(phases: list[TodoPhase], params: TodoParams, errors: list[str]) -> None:
-    if params.task:
-        hit = resolve_task_or_error(phases, params.task, errors)
-        if hit:
-            task, _ = hit
+        return phases
+    elif op == "unblock":
+        if not entry.task and not entry.phase:
+            errors.append("unblock requires a task or phase target")
+            return phases
+        for task in get_task_targets(phases, entry, errors):
             if task.status == "blocked":
                 task.status = "pending"
                 task.blocker = None
-    elif params.phase:
-        phase = find_phase_by_name(phases, params.phase)
-        if not phase:
-            errors.append(f'Phase "{params.phase}" not found')
-            return
-        for t in phase.tasks:
-            if t.status == "blocked":
-                t.status = "pending"
-                t.blocker = None
+        return phases
+    elif op == "rm":
+        return remove_tasks(phases, entry, errors)
+    elif op == "append":
+        return append_items(phases, entry, errors)
+    elif op == "view":
+        return phases
     else:
-        errors.append("op='unblock' requires 'task' or 'phase'")
+        errors.append(f'Unknown operation "{op}"')
+        return phases
 
 
-def _op_rm(
-    phases: list[TodoPhase], params: TodoParams
+def apply_ops(
+    current_phases: list[TodoPhase], entry: TodoParams
 ) -> tuple[list[TodoPhase], list[str]]:
     errors: list[str] = []
-    if params.task:
-        hit = resolve_task_or_error(phases, params.task, errors)
-        if not hit:
-            return phases, errors
-        _, parent_phase = hit
-        parent_phase.tasks = [t for t in parent_phase.tasks if t.content != params.task]
-        return phases, []
-    elif params.phase:
-        phase = find_phase_by_name(phases, params.phase)
-        if not phase:
-            errors.append(f'Phase "{params.phase}" not found')
-            return phases, errors
-        return [p for p in phases if p.name != params.phase], []
-    else:
-        errors.append("op='rm' requires 'task' or 'phase'")
-        return phases, errors
+    next_phases = clone_phases(current_phases)
+    next_phases = apply_entry(next_phases, entry, errors)
+    if not errors and entry.op != "view":
+        normalize_in_progress(next_phases)
+    return next_phases, errors
 
 
-def _op_append(phases: list[TodoPhase], params: TodoParams, errors: list[str]) -> None:
-    if not params.items:
-        errors.append("op='append' requires 'items'")
-        return
-
-    all_contents = {t.content for p in phases for t in p.tasks}
-    for item in params.items:
-        if item in all_contents:
-            errors.append(f'Duplicate task content: "{item}"')
-            return
-
-    target_phase_name = params.phase or (
-        phases[0].name if phases else DEFAULT_INIT_PHASE
-    )
-    phase = find_phase_by_name(phases, target_phase_name)
-    if not phase:
-        phase = TodoPhase(name=target_phase_name, tasks=[])
-        phases.append(phase)
-
-    for item in params.items:
-        phase.tasks.append(TodoItem(content=item, status="pending"))
-
-
-def format_summary(
-    phases: list[TodoPhase], errors: list[str], read_only: bool = False
-) -> str:
-    """Formats visual summary string returned to the model."""
+def format_summary(phases: list[TodoPhase], errors: list[str], read_only: bool = False) -> str:
     if errors:
-        return f"Error: {'; '.join(errors)}"
-
-    if not phases or not any(p.tasks for p in phases):
-        return "No tasks initialized."
+        return "Errors encountered:\n" + "\n".join(f"- {e}" for e in errors)
+    if not phases:
+        return "Todo list is empty."
 
     all_tasks = [t for p in phases for t in p.tasks]
-    closed_all = sum(1 for t in all_tasks if t.status in ("completed", "abandoned"))
-    open_all = len(all_tasks) - closed_all
-    blocked_all = sum(1 for t in all_tasks if t.status == "blocked")
+    if not all_tasks:
+        return "Todo list is empty."
 
+    closed_all = sum(1 for t in all_tasks if t.status in ("completed", "abandoned"))
+    blocked_all = sum(1 for t in all_tasks if t.status == "blocked")
+    open_all = len(all_tasks) - closed_all
+
+    # Locate earliest phase with open tasks
     current_idx = 0
     for idx, p in enumerate(phases):
         if any(t.status not in ("completed", "abandoned") for t in p.tasks):
@@ -654,18 +623,12 @@ def format_summary(
             break
 
     current = phases[current_idx]
-    done_current = sum(
-        1 for t in current.tasks if t.status in ("completed", "abandoned")
-    )
+    done_current = sum(1 for t in current.tasks if t.status in ("completed", "abandoned"))
 
     lines: list[str] = []
     blocked_suffix = f", {blocked_all} blocked" if blocked_all > 0 else ""
-    lines.append(
-        f"Overall: {closed_all}/{len(all_tasks)} done, {open_all} open{blocked_suffix}."
-    )
-    lines.append(
-        f'Active phase {current_idx + 1}/{len(phases)} "{current.name}" ({done_current}/{len(current.tasks)}).'
-    )
+    lines.append(f"Overall: {closed_all}/{len(all_tasks)} done, {open_all} open{blocked_suffix}.")
+    lines.append(f'Active phase {current_idx + 1}/{len(phases)} "{current.name}" ({done_current}/{len(current.tasks)}).')
 
     for phase in phases:
         lines.append(f"  {phase.name}:")
@@ -690,7 +653,6 @@ def format_summary(
 Lớp `TodoTracker` nắm giữ trạng thái chuẩn mực trong RAM của phiên làm việc hiện tại, thực hiện defensive copy để đảm bảo an toàn đa luồng:
 
 ```python
-"""In-memory state manager that holds the canonical todo state for an agent session."""
 from __future__ import annotations
 
 from typing import Optional
@@ -700,20 +662,26 @@ from dino_coding.tools.todo.types import TodoParams, TodoPhase
 
 
 class TodoTracker:
+    """In-memory state manager that holds the canonical todo state for an agent session."""
+
     def __init__(self) -> None:
         self._phases: list[TodoPhase] = []
 
     @property
     def phases(self) -> list[TodoPhase]:
-        """Returns a defensive clone of internal phases."""
+        """Returns a defensive clone of the internal phases."""
         return clone_phases(self._phases)
 
     def set_phases(self, phases: list[TodoPhase]) -> None:
-        """Sets internal phases using defensive cloning."""
+        """Sets internal phases to a defensive clone of the provided phases."""
         self._phases = clone_phases(phases)
 
     def execute_op(self, params: TodoParams) -> tuple[str, bool]:
-        """Executes an operation. Returns (summary, has_error). Rolls back on error."""
+        """Executes a todo operation.
+
+        Returns (summary, error_occurred).
+        Rolls back (leaves state unchanged) on error.
+        """
         updated_phases, errors = apply_ops(self._phases, params)
         if errors:
             return format_summary(self._phases, errors), True
@@ -724,15 +692,18 @@ class TodoTracker:
         return format_summary(self._phases, []), False
 
     def to_markdown(self) -> str:
+        """Serializes current phases to markdown format."""
         return phases_to_markdown(self._phases)
 
     def from_markdown(self, md: str) -> list[str]:
+        """Parses markdown into phases. Updates state only if no errors occur."""
         phases, errors = markdown_to_phases(md)
         if not errors:
             self._phases = phases
         return errors
 
     def reset(self) -> None:
+        """Clears all todo state."""
         self._phases = []
 ```
 
@@ -741,7 +712,8 @@ class TodoTracker:
 ### 4.5 `tool.py` — LangChain Tool Đóng Gói
 
 ```python
-"""LangChain tool binding for TodoTracker."""
+# no future annotations so pydantic evaluates types without evaluating 'list' as class attribute
+
 import typing
 from typing import Any, Optional, Union
 from langchain_core.tools import BaseTool, tool
@@ -781,6 +753,7 @@ def get_todo_tool(tracker: TodoTracker) -> BaseTool:
         items: Optional[list[str]] = None,
         reason: Optional[str] = None,
     ) -> str:
+        # Convert raw dicts or InitPhaseSchema in list to InitPhaseInput
         parsed_list: Optional[list[InitPhaseInput]] = None
         if list:
             parsed_list = []
@@ -811,7 +784,6 @@ def get_todo_tool(tracker: TodoTracker) -> BaseTool:
 Module này thực hiện hook `wrap_model_call` để theo dõi các lệnh sửa file và tiêm lời nhắc nhở:
 
 ```python
-"""AgentMiddleware injecting todo tool, tracking mutations, and enforcing reminder loop."""
 from __future__ import annotations
 
 from typing import Any, Callable, Optional, Sequence
@@ -836,6 +808,8 @@ COMPLETION_REMINDER_PROMPT = (
 
 
 class TodoMiddleware(AgentMiddleware[Any, Any, Any]):
+    """Middleware injecting todo tool, tracking mutations, and enforcing reminder loop."""
+
     tools: Sequence[BaseTool]
 
     def __init__(
@@ -850,9 +824,11 @@ class TodoMiddleware(AgentMiddleware[Any, Any, Any]):
         self.consecutive_mutations: int = 0
         self.nudges_sent: int = 0
         self.tools = [get_todo_tool(self.tracker)]
+        self._processed_msg_ids: set[str] = set()
         self._processed_tool_call_ids: set[str] = set()
 
     def _record_tool_call_once(self, tool_name: str, tool_call_id: Optional[str] = None) -> None:
+        """Records a tool call only once based on its ID if available."""
         if tool_call_id:
             if tool_call_id in self._processed_tool_call_ids:
                 return
@@ -860,18 +836,21 @@ class TodoMiddleware(AgentMiddleware[Any, Any, Any]):
         self.record_tool_call(tool_name)
 
     def record_tool_call(self, tool_name: str) -> None:
+        """Records a tool call to update consecutive mutations counter."""
         if tool_name == "todo":
             self.consecutive_mutations = 0
         elif tool_name in MUTATING_TOOLS:
             self.consecutive_mutations += 1
 
     def should_nudge(self) -> bool:
+        """Determines if a mid-run nudge should be sent."""
         return (
             self.consecutive_mutations >= self.mutation_threshold
             and self.nudges_sent < self.max_nudges_per_prompt
         )
 
     def consume_nudge(self) -> Optional[str]:
+        """Consumes a nudge if eligible, resetting counter and incrementing nudges_sent."""
         if self.should_nudge():
             self.nudges_sent += 1
             self.consecutive_mutations = 0
@@ -879,6 +858,7 @@ class TodoMiddleware(AgentMiddleware[Any, Any, Any]):
         return None
 
     def get_open_tasks_count(self) -> int:
+        """Returns count of tasks with status 'pending' or 'in_progress' from tracker."""
         count = 0
         for phase in self.tracker.phases:
             for task in phase.tasks:
@@ -889,42 +869,90 @@ class TodoMiddleware(AgentMiddleware[Any, Any, Any]):
     def wrap_model_call(
         self,
         request: ModelRequest[Any],
-        handler: Callable[[ModelRequest[Any]], ModelResponse[Any] | AIMessage],
+        handler: Callable[[ModelRequest[Any]], ModelResponse[Any]],
     ) -> ModelResponse[Any] | AIMessage:
-        # 1. Quét tin nhắn trước đó để cập nhật counter
-        for msg in reversed(request.messages):
+        """Intercepts model call to track tool calls, inject nudges, and remind open tasks."""
+        # Check request.messages for tool calls
+        for idx, msg in enumerate(request.messages):
+            msg_id = getattr(msg, "id", None) or f"msg_{idx}_{type(msg).__name__}"
+            if msg_id in self._processed_msg_ids:
+                continue
+            self._processed_msg_ids.add(msg_id)
+
             if isinstance(msg, AIMessage) and msg.tool_calls:
-                for call in msg.tool_calls:
-                    call_name = call.get("name") if isinstance(call, dict) else getattr(call, "name", None)
-                    call_id = call.get("id") if isinstance(call, dict) else getattr(call, "id", None)
-                    if call_name:
-                        self._record_tool_call_once(call_name, call_id)
-                break
+                for tc in msg.tool_calls:
+                    name = tc.get("name") if isinstance(tc, dict) else getattr(tc, "name", None)
+                    tc_id = tc.get("id") if isinstance(tc, dict) else getattr(tc, "id", None)
+                    if name:
+                        self._record_tool_call_once(name, tc_id)
 
-        # 2. Tiêm Mid-run Nudge nếu chạm ngưỡng
-        nudge_text = self.consume_nudge()
-        if nudge_text:
-            new_messages = list(request.messages) + [SystemMessage(content=nudge_text)]
-            request = request.copy(update={"messages": new_messages})
+        # Check if we should inject mid-run nudge
+        nudge_content = self.consume_nudge()
+        current_request = request
+        if nudge_content is not None:
+            updated_messages = list(request.messages) + [SystemMessage(content=nudge_content)]
+            current_request = request.override(messages=updated_messages)
 
-        # 3. Thực thi model call
-        response = handler(request)
+        response = handler(current_request)
 
-        # 4. Kiểm tra response để theo dõi tool calls hoặc completion reminder
-        actual_msg = response.message if isinstance(response, ModelResponse) else response
-        if isinstance(actual_msg, AIMessage):
-            if actual_msg.tool_calls:
-                for call in actual_msg.tool_calls:
-                    call_name = call.get("name") if isinstance(call, dict) else getattr(call, "name", None)
-                    call_id = call.get("id") if isinstance(call, dict) else getattr(call, "id", None)
-                    if call_name:
-                        self._record_tool_call_once(call_name, call_id)
-            else:
-                # Model không gọi tool -> có ý định kết thúc lượt
-                open_count = self.get_open_tasks_count()
-                if open_count > 0:
-                    reminder = COMPLETION_REMINDER_PROMPT.format(count=open_count)
-                    actual_msg.content = f"{actual_msg.content}\n\n[{reminder}]"
+        # Inspect response
+        ai_msg: Optional[AIMessage] = None
+        has_tool_calls = False
+
+        if isinstance(response, ModelResponse):
+            for res_msg in response.result:
+                if isinstance(res_msg, AIMessage):
+                    ai_msg = res_msg
+                    if res_msg.tool_calls:
+                        has_tool_calls = True
+                        for tc in res_msg.tool_calls:
+                            name = (
+                                tc.get("name") if isinstance(tc, dict) else getattr(tc, "name", None)
+                            )
+                            tc_id = tc.get("id") if isinstance(tc, dict) else getattr(tc, "id", None)
+                            if name:
+                                self._record_tool_call_once(name, tc_id)
+        elif isinstance(response, AIMessage):
+            ai_msg = response
+            if response.tool_calls:
+                has_tool_calls = True
+                for tc in response.tool_calls:
+                    name = tc.get("name") if isinstance(tc, dict) else getattr(tc, "name", None)
+                    tc_id = tc.get("id") if isinstance(tc, dict) else getattr(tc, "id", None)
+                    if name:
+                        self._record_tool_call_once(name, tc_id)
+
+        # If model is finishing (no tool calls) and tasks remain open, append completion reminder
+        if not has_tool_calls:
+            open_count = self.get_open_tasks_count()
+            if open_count > 0:
+                reminder = COMPLETION_REMINDER_PROMPT.format(count=open_count)
+                if isinstance(response, ModelResponse) and ai_msg is not None:
+                    new_content = f"{ai_msg.content}\n\n{reminder}" if ai_msg.content else reminder
+                    new_ai_msg = AIMessage(
+                        content=new_content,
+                        tool_calls=ai_msg.tool_calls,
+                        id=ai_msg.id,
+                        additional_kwargs=ai_msg.additional_kwargs,
+                        response_metadata=ai_msg.response_metadata,
+                    )
+                    # Replace ai_msg in result
+                    new_result = [
+                        new_ai_msg if m is ai_msg else m for m in response.result
+                    ]
+                    return ModelResponse(
+                        result=new_result,
+                        structured_response=response.structured_response,
+                    )
+                elif isinstance(response, AIMessage):
+                    new_content = f"{response.content}\n\n{reminder}" if response.content else reminder
+                    return AIMessage(
+                        content=new_content,
+                        tool_calls=response.tool_calls,
+                        id=response.id,
+                        additional_kwargs=response.additional_kwargs,
+                        response_metadata=response.response_metadata,
+                    )
 
         return response
 ```
